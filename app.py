@@ -8,12 +8,7 @@ collection = db['melbourne_race']
 
 def fetch_2026_data():
     print("Connecting to OpenF1 API for 2026 Melbourne Data...")
-    
-    # We are looking for the 2026 Race in Melbourne
-    # Using the session_key we identified earlier: 9654
     session_key = 9654 
-    
-    # Fetching Laps as a starting point
     url = f"https://api.openf1.org/v1/laps?session_key={session_key}"
     
     try:
@@ -21,8 +16,6 @@ def fetch_2026_data():
         if response.status_code == 200:
             data = response.json()
             print(f"Success! Retrieved {len(data)} lap records.")
-            
-            # 2. Insert into MongoDB
             if data:
                 collection.insert_many(data)
                 print("Data successfully saved to MongoDB.")
