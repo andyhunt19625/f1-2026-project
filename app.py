@@ -19,7 +19,7 @@ if 'token' not in st.session_state:
 
 cookies = {"f1_access_token": st.session_state.token}
 
-# --- 2. IPAD PRO OPTIMIZED CSS ---
+# --- 2. PROVEN CSS (Fixed widths to prevent column collapse) ---
 st.markdown("""
     <style>
     .stApp { background-color: #06060a; color: #e0e0e0; font-family: 'Inter', sans-serif; }
@@ -38,7 +38,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. CIRCUIT BREAKER DATA ENGINE ---
+# --- 3. PROVEN DIRECTORY PULLS ONLY ---
 @st.cache_data(ttl=5)
 def fetch_verified_state(t_iso):
     try:
@@ -47,6 +47,7 @@ def fetch_verified_state(t_iso):
         s = requests.get(f"https://api.openf1.org/v1/stints?session_key={SK}", cookies=cookies, timeout=5).json()
         rc = requests.get(f"https://api.openf1.org/v1/race_control?session_key={SK}&date<={t_iso}", cookies=cookies, timeout=5).json()
         
+        # Circuit Breaker to prevent AttributeError
         if not all(isinstance(x, list) for x in [l, d, s, rc]):
             return None, None, None, None
         return l, {str(dr['driver_number']): dr for dr in d}, s, rc
@@ -74,39 +75,41 @@ with col4:
         st.session_state.current_time = v_clock
 
 t_iso = st.session_state.current_time.isoformat()
-
 l_raw, d_map, s_raw, rc_raw = fetch_verified_state(t_iso)
 
 ui_placeholder = st.empty()
 
 with ui_placeholder.container():
     if l_raw and d_map:
-        # A. FLAG PRIORITY BRIDGE (Reverse Scan for Current State)
+        # A. PROVEN FLAG LOGIC
         status, b_class = "TRACK CLEAR", "banner-green"
         if rc_raw:
-            rc_sorted = sorted(rc_raw, key=lambda x: x.get('date', ''), reverse=True)
+            rc_sorted = sorted(rc_raw, key=lambda x: x.get('date', '') if isinstance(x, dict) else '', reverse=True)
             for m in rc_sorted:
+                if not isinstance(m, dict): continue
                 msg = m.get('message', '').upper()
-                flag = m.get('flag', '').upper()
-                if "CHEQUERED" in msg or flag == "CHEQUERED":
+                flag = m.get('flag', '')
+                flag_str = flag.upper() if flag else ""
+                
+                if "CHEQUERED" in msg or flag_str == "CHEQUERED":
                     status, b_class = "CHEQUERED FLAG", "banner-green"
                     break
-                elif "RED" in msg or flag == "RED":
+                elif "RED" in msg or flag_str == "RED":
                     status, b_class = "RED FLAG", "banner-red"
                     break
                 elif "SAFETY CAR" in msg or "VSC" in msg:
                     status, b_class = "SAFETY CAR", "banner-yellow"
                     break
-                elif "YELLOW" in msg or flag == "YELLOW":
+                elif "YELLOW" in msg or flag_str == "YELLOW":
                     status, b_class = "YELLOW FLAG", "banner-yellow"
                     break
-                elif "GREEN" in msg or "CLEAR" in msg or flag == "GREEN" or flag == "CLEAR":
+                elif "GREEN" in msg or "CLEAR" in msg or flag_str == "GREEN" or flag_str == "CLEAR":
                     status, b_class = "TRACK CLEAR", "banner-green"
                     break
 
         st.markdown(f'<div class="top-banner {b_class}">{status}</div>', unsafe_allow_html=True)
 
-        # B. TOWER LOGIC (Fixed Sorting Math)
+        # B. TOWER LOGIC & MATH
         latest = {str(lap['driver_number']): lap for lap in l_raw if isinstance(lap, dict) and 'driver_number' in lap}
         
         def lap_sort_key(num):
@@ -118,7 +121,6 @@ with ui_placeholder.container():
             return (lap.get('lap_number', 0), -dt)
 
         sorted_nums = sorted(latest.keys(), key=lap_sort_key, reverse=True)
-        
         lead_num = sorted_nums[0] if sorted_nums else None
         lead_dt = datetime.fromisoformat(latest[lead_num]['date_start'].replace('Z', '+00:00')) if lead_num else st.session_state.current_time
         
@@ -126,19 +128,17 @@ with ui_placeholder.container():
             d, lap = d_map.get(num, {}), latest[num]
             curr_dt = datetime.fromisoformat(lap['date_start'].replace('Z', '+00:00'))
             
-            # GAPS
+            # GAPS & TYRES
             gap_sec = (curr_dt - lead_dt).total_seconds()
             is_pit = (st.session_state.current_time - curr_dt).total_seconds() > 150 or lap.get('is_pit_out_lap')
             gap_display = "PIT" if is_pit else ("LEADER" if i == 0 else f"+{abs(gap_sec):.3f}")
             gap_css = "stale-pit" if is_pit else ""
 
-            # TYRES
-            stint = [s for s in s_raw if str(s.get('driver_number')) == num]
+            stint = [s for s in s_raw if isinstance(s, dict) and str(s.get('driver_number')) == num]
             comp = stint[-1].get('compound', 'U') if stint else 'U'
             t_color = {"HARD": "#ffffff", "MEDIUM": "#ffea00", "SOFT": "#ff0000"}.get(comp, "#444")
 
-            # --- OFFICIAL SOURCE LOGIC: AERO INFERRED FROM LAPS ---
-            # Correct indentation level aligned with the 'for' loop logic
+            # --- OFFICIAL SOURCE AERO BRIDGE (FROM LAPS) ---
             st_speed = lap.get('st_speed') or 0
             
             aero_html = ""
@@ -147,17 +147,16 @@ with ui_placeholder.container():
             elif st_speed > 0 and st_speed <= 310:
                 aero_html = "<span class='aero-badge aero-z'>Z-MODE</span>"
             
-            # Formatted string for speed display
             speed_display = f"{int(st_speed)}" if st_speed else "--"
 
-            # HTML ROW (Fixed Display Widths to prevent formatting break)
+            # RENDER ROW
             st.markdown(f"""
                 <div class="tower-row">
                     <div style="width:35px; color:#444; font-size:14px; font-weight:800;">{i+1}</div>
                     <div class="team-bar" style="background:#{d.get('team_colour', '333')};"></div>
                     <div style="width:70px; font-size:24px; font-weight:900; letter-spacing:-0.5px;">{d.get('name_acronym', num)}</div>
                     
-                    <div style="width:160px; display:flex; align-items:center;">
+                    <div style="width:120px; display:flex; align-items:center;">
                         {aero_html}
                     </div>
                     
@@ -170,7 +169,7 @@ with ui_placeholder.container():
     else:
         st.markdown('<div class="top-banner banner-yellow">📡 SEARCHING FOR RACE SIGNAL...</div>', unsafe_allow_html=True)
 
-# --- REPLAY ENGINE TICKER ---
+# --- REPLAY TICKER ---
 if st.session_state.is_playing:
     step = timedelta(seconds=1 * speed_mult)
     st.session_state.current_time += step
