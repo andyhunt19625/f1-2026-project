@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 # --- 1. VERIFIED CONFIG & AUTH (FROM SOURCE) ---
 USER, PASS = "andyhunt196@gmail.com", "NXo3j6z8zusIAiVG"
-SK = 11234  
+SK = 11234
 
 st.set_page_config(page_title="AUS 26 | MASTER REPLAY", layout="wide", initial_sidebar_state="collapsed")
 
@@ -30,7 +30,7 @@ st.markdown("""
     .tower-row { border-bottom: 1px solid #1c1c2b; padding: 15px 5px; display: flex; align-items: center; justify-content: space-between;}
     .team-bar { width: 6px; height: 38px; border-radius: 3px; margin-right: 20px; }
     .aero-badge { background: #00ff41; color: black; font-size: 12px; font-weight: 900; padding: 4px 10px; border-radius: 4px; }
-    .aero-z { background: #ffea00; } 
+    .aero-z { background: #ffea00; }
     .boost-badge { background: #ff00ff; color: white; font-size: 12px; font-weight: 900; padding: 4px 10px; border-radius: 4px; margin-left: 10px; }
     .speed-val { font-family: 'JetBrains Mono', monospace; font-size: 24px; font-weight: 800; color: #fff; width: 100px; text-align: right; }
     .sub-info { text-align: center; color: #888; font-weight: 800; font-size: 14px; margin-bottom: 20px; letter-spacing: 0.5px; }
@@ -46,7 +46,7 @@ def fetch_master_state(t_iso):
         d = requests.get(f"https://api.openf1.org/v1/drivers?session_key={SK}", cookies=cookies, timeout=5).json()
         w = requests.get(f"https://api.openf1.org/v1/weather?session_key={SK}&date<={t_iso}", cookies=cookies, timeout=5).json()
         rc = requests.get(f"https://api.openf1.org/v1/race_control?session_key={SK}&date<={t_iso}", cookies=cookies, timeout=5).json()
-        
+
         if not all(isinstance(x, list) for x in [l, d, w, rc]):
             return None, None, None, None
         return l, {str(dr['driver_number']): dr for dr in d}, w, rc
@@ -77,7 +77,7 @@ if l_raw and d_map:
     # A. FLAG PRIORITY BRIDGE
     p_map = {"RED": 1, "SAFETY CAR": 2, "VSC": 3, "YELLOW": 4, "BLUE": 5, "GREEN": 6}
     status, b_class = "TRACK CLEAR", "banner-green"
-    
+
     if rc_raw:
         active = []
         for m in rc_raw:
@@ -87,41 +87,41 @@ if l_raw and d_map:
         if active:
             top = min(active, key=lambda x: x[0])
             status, b_class = top[1], "banner-red" if top[0]==1 else "banner-yellow" if top[0]<6 else "banner-green"
-    
+
     st.markdown(f'<div class="top-banner {b_class}">{status}</div>', unsafe_allow_html=True)
 
     # B. WEATHER & LAP COUNT BRIDGE
     current_lap = max([lap.get('lap_number', 0) for lap in l_raw]) if l_raw else 0
     weather_str = "WEATHER: WAITING SYNC..."
-    
+
     if w_raw:
-        latest_w = w_raw[-1] 
+        latest_w = w_raw[-1]
         air_t = latest_w.get('air_temperature', '--')
         trk_t = latest_w.get('track_temperature', '--')
         rain = "YES" if latest_w.get('rainfall') else "NO"
         weather_str = f"LAP {current_lap} | AIR: {air_t}°C | TRACK: {trk_t}°C | RAIN: {rain}"
-    
+
     st.markdown(f'<div class="sub-info">{weather_str}</div>', unsafe_allow_html=True)
 
     # C. TELEMETRY TOWER LOGIC (Russell & Bottas)
     for num in [63, 77]:
         car_data = fetch_car_data(t_start_iso, t_iso, num)
         d = d_map.get(str(num), {})
-        
+
         if car_data and len(car_data) > 0:
             latest_data = car_data[-1] # Grab the most recent point in the 2s window
             speed = latest_data.get('speed', 0)
-            
+
             # 2026 AERO & BOOST BRIDGE
             aero_val = latest_data.get('drs', 0)
             aero_html = "<span class='aero-badge'>X-MODE</span>" if aero_val == 14 else "<span class='aero-badge aero-z'>Z-MODE</span>"
-            
+
             boost_val = latest_data.get('mgu_k_mode', 0)
             boost_html = "<span class='boost-badge'>⚡ OVERRIDE</span>" if boost_val == 7 else ""
-            
+
             team_color = d.get('team_colour', '444')
             acronym = d.get('name_acronym', str(num))
-            
+
             st.markdown(f"""
                 <div class="tower-row">
                     <div style="display:flex; align-items:center; width: 120px;">
