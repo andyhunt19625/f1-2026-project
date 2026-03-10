@@ -1,12 +1,37 @@
 import requests
-import pymongo
+from pymongo import MongoClient
 
-# 2026 F1 Scraper logic
-print("Starting 2026 Australian GP Data Ingest...")
+# 1. Setup Database Connection
+client = MongoClient("mongodb://localhost:27017/")
+db = client['f1_2026']
+collection = db['melbourne_race']
 
-def main():
-    # Insert your scraping logic here
-    pass
+def fetch_2026_data():
+    print("Connecting to OpenF1 API for 2026 Melbourne Data...")
+    
+    # We are looking for the 2026 Race in Melbourne
+    # Using the session_key we identified earlier: 9654
+    session_key = 9654 
+    
+    # Fetching Laps as a starting point
+    url = f"https://api.openf1.org/v1/laps?session_key={session_key}"
+    
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Success! Retrieved {len(data)} lap records.")
+            
+            # 2. Insert into MongoDB
+            if data:
+                collection.insert_many(data)
+                print("Data successfully saved to MongoDB.")
+        else:
+            print(f"Failed to fetch data. Status code: {response.status_code}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    main()
+    print("--- Starting 2026 Australian GP Data Ingest ---")
+    fetch_2026_data()
+    print("--- Ingest Complete ---")
