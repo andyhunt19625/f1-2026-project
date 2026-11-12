@@ -19,10 +19,8 @@ import argparse
 import json
 
 from .lap_analysis import clean_series, complete, fmt_ms, time_at
+from .session_reader import LapBuilder, lap_label, read_events
 
-KEYS = ('"packet_name": "Participants"', '"packet_name": "LapData"',
-        '"packet_name": "CarTelemetry"', '"packet_name": "Session"',
-        '"packet_name": "CarSetups"')
 SETUP_FIELDS = ("frontWing", "rearWing", "onThrottle", "offThrottle", "frontCamber", "rearCamber",
                 "frontToe", "rearToe", "frontSuspension", "rearSuspension", "frontAntiRollBar",
                 "rearAntiRollBar", "frontSuspensionHeight", "rearSuspensionHeight", "brakePressure",
@@ -31,55 +29,29 @@ SETUP_FIELDS = ("frontWing", "rearWing", "onThrottle", "offThrottle", "frontCamb
 
 
 def load_all(path):
-    names, n, player, track_len, setups = None, None, None, None, None
-    lapd, tel = {}, {}
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            head = line[:120]
-            if not any(k in head for k in KEYS):
-                continue
-            d = json.loads(line)
-            kind = d["packet_name"]
-            if kind == "Participants" and names is None:
-                n = d.get("numActiveCars", len(d["participants"]))
-                parts = d["participants"][:n]
-                names = [p["name"] for p in parts]
-                player = next((i for i, p in enumerate(parts) if p.get("aiControlled") == 0), None)
-            elif kind == "Session" and track_len is None and d.get("trackLength"):
-                track_len = d["trackLength"]
-            elif kind == "CarSetups" and n:
-                setups = d["carSetupData"][:n]
-            elif kind == "LapData" and n:
-                lapd[d["frameIdentifier"]] = [
-                    (c["lapDistance"], c["currentLapTimeInMS"], c["currentLapNum"],
-                     c["currentLapInvalid"], c["pitStatus"], c["lastLapTimeInMS"])
-                    for c in d["lapData"][:n]]
-            elif kind == "CarTelemetry" and n:
-                tel[d["frameIdentifier"]] = [
-                    (c["speed"], c["throttle"], c["brake"], c["gear"], c["steer"])
-                    for c in d["carTelemetryData"][:n]]
+    names = n = player = track_len = setups = None
+    builders = None
+    for ev in read_events(path):
+        kind = ev[0]
+        if kind == "participants" and names is None:
+            d = ev[1]
+            n = d.get("numActiveCars", len(d["participants"]))
+            parts = d["participants"][:n]
+            names = [p["name"] for p in parts]
+            player = next((i for i, p in enumerate(parts) if p.get("aiControlled") == 0), None)
+            builders = [LapBuilder() for _ in range(n)]
+        elif kind == "session" and track_len is None and ev[1].get("trackLength"):
+            track_len = ev[1]["trackLength"]
+        elif kind == "setups" and n:
+            setups = ev[1]["carSetupData"][:n]
+        elif kind == "frame" and builders:
+            _, _, lap, tel = ev
+            for slot in range(min(n, len(lap), len(tel))):
+                builders[slot].add(lap[slot], tel[slot])
     if names is None:
         raise SystemExit("No Participants packet in this session.")
-    laps = [build_laps(lapd, tel, slot) for slot in range(n)]
-    return {"names": names, "player": player, "track_length": track_len, "setups": setups, "laps": laps}
-
-
-def build_laps(lapd, tel, slot):
-    laps, prev = {}, None
-    for frame in sorted(lapd):
-        dist, t_ms, num, invalid, pit, last_ms = lapd[frame][slot]
-        lap = laps.setdefault(num, {"samples": [], "time_ms": None, "valid": True, "pit": False})
-        if prev is not None and num != prev and prev in laps:
-            laps[prev]["time_ms"] = last_ms or None
-        prev = num
-        lap["valid"] = lap["valid"] and not invalid
-        lap["pit"] = lap["pit"] or bool(pit)
-        tl = tel.get(frame)
-        if tl is None or dist < 0:
-            continue
-        speed, throttle, brake, gear, steer = tl[slot]
-        lap["samples"].append((dist, t_ms, speed, throttle, brake, gear, steer))
-    return laps
+    return {"names": names, "player": player, "track_length": track_len, "setups": setups,
+            "laps": [b.laps for b in builders]}
 
 
 def best_lap(laps, length):
@@ -175,7 +147,7 @@ def analyse(data, seg_m=25, slow=120, fast=200, steer_thr=0.05, max_cars=5):
             corner_list.append({"corner": i, "from_m": round(lo), "to_m": round(hi), "type": cls,
                                 "loss_ms": round(loss(lo, hi)), "you": detail(mine, lo, hi),
                                 "them": detail(theirs, lo, hi)})
-        results.append({"driver": data["names"][slot], "best_lap_ms": t_ms, "lap": n,
+        results.append({"driver": data["names"][slot], "best_lap_ms": t_ms, "lap": lap_label(n),
                         "gap_ms": my_best["time_ms"] - t_ms,
                         "loss_by_type_ms": {k: round(v) for k, v in by_class.items() if k != "unknown" or v},
                         "corners": corner_list,
@@ -184,7 +156,7 @@ def analyse(data, seg_m=25, slow=120, fast=200, steer_thr=0.05, max_cars=5):
     for r in results:
         for k, v in r["loss_by_type_ms"].items():
             summary.setdefault(k, []).append(v)
-    return {"you": data["names"][me], "your_best_ms": my_best["time_ms"], "your_lap": my_n,
+    return {"you": data["names"][me], "your_best_ms": my_best["time_ms"], "your_lap": lap_label(my_n),
             "note": note, "limits": {"slow_below_kmh": slow, "fast_above_kmh": fast,
                                      "straight_if_steer_below": steer_thr, "piece_m": seg_m},
             "average_loss_by_type_ms": {k: round(sum(v) / len(v)) for k, v in summary.items()},
@@ -214,7 +186,7 @@ def report(res, top=5):
     if "error" in res:
         return res["error"]
     lim = res["limits"]
-    out = [f"Your best clean lap: lap {res['your_lap']}, {fmt_ms(res['your_best_ms'])}."]
+    out = [f"Your best clean lap: {res['your_lap']}, {fmt_ms(res['your_best_ms'])}."]
     if res["note"]:
         out.append(res["note"])
     out.append(f"(Corner types: slow < {lim['slow_below_kmh']} km/h, fast > {lim['fast_above_kmh']} "
@@ -226,7 +198,7 @@ def report(res, top=5):
             out.append(f"  {k:<8} {avg[k] / 1000:+.3f} s")
     worst = max((k for k in ("slow", "medium", "fast", "straight") if k in avg), key=lambda k: avg[k])
     for r in res["versus"]:
-        out += ["", f"vs {r['driver'].title()} (lap {r['lap']}, {fmt_ms(r['best_lap_ms'])}, "
+        out += ["", f"vs {r['driver'].title()} ({r['lap']}, {fmt_ms(r['best_lap_ms'])}, "
                     f"{r['gap_ms'] / 1000:.3f} s quicker):"]
         out.append("  by type: " + ", ".join(f"{k} {v / 1000:+.3f} s" for k, v in r["loss_by_type_ms"].items()))
         for c in sorted(r["corners"], key=lambda c: -c["loss_ms"])[:top]:
