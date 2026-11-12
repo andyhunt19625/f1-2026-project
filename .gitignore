@@ -2,3 +2,4 @@ __pycache__/
 .claude/
 backups/
 run/
+laps_cache.pkl.gz
