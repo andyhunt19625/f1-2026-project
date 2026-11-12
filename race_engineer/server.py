@@ -22,7 +22,8 @@ from urllib.parse import parse_qs, urlparse
 
 from .live import DEFAULT_PARSER, LiveFeed, load_parser
 from .state import LiveState
-from .tools import DEFAULT_BUFFER_S, ToolError, gap_to, pit_window, tyre_status, weather_change
+from .tools import (DEFAULT_BUFFER_S, ToolError, damage_status, gap_to, pit_window, tyre_status,
+                    weather_change)
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8777
@@ -48,7 +49,9 @@ def run_tool(state, q, cfg):
                           _float(q, "buffer", cfg.get("buffer", DEFAULT_BUFFER_S)))
     if tool == "weather_change":
         return weather_change(state)
-    raise ToolError("Unknown tool. Use gap_to, tyre_status, pit_window or weather_change.")
+    if tool == "damage_status":
+        return damage_status(state, q.get("driver", "me"))
+    raise ToolError("Unknown tool. Use gap_to, tyre_status, pit_window, weather_change or damage_status.")
 
 
 def status(state, feed):

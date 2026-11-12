@@ -70,6 +70,25 @@ class ServerTests(unittest.TestCase):
         code, d = self.get("/nothing")
         self.assertEqual(code, 404)
 
+    def test_damage(self):
+        dmg = {"tyresWear": [1, 1, 1, 1], "tyresDamage": [1, 2, 3, 4], "brakesDamage": [0, 0, 0, 0],
+               "frontLeftWingDamage": 15, "frontRightWingDamage": 0, "rearWingDamage": 0,
+               "floorDamage": 8, "diffuserDamage": 0, "sidepodDamage": 0, "drsFault": 0,
+               "ersFault": 0, "gearBoxDamage": 17, "engineDamage": 30, "engineBlown": 0,
+               "engineSeized": 0}
+        self.state.ingest({"packet_name": "CarDamage", "carDamageData": [dmg, dict(dmg), dict(dmg)]})
+        code, d = self.get(ask.build_path(["damage"]))
+        self.assertEqual(code, 200)
+        self.assertEqual(d["answer"], "You have damage: front-left wing 15%, floor 8%.")
+        self.assertEqual(d["parts_pct"]["engine"], 30)
+        self.assertEqual(d["faults"], [])
+        clean = dict(dmg, frontLeftWingDamage=0, floorDamage=0, drsFault=1)
+        self.state.ingest({"packet_name": "CarDamage", "carDamageData": [clean, dmg, dmg]})
+        code, d = self.get(ask.build_path(["damage"]))
+        self.assertEqual(d["answer"], "You have no wing, floor, diffuser or sidepod damage. Faults: DRS fault.")
+        code, d = self.get(ask.build_path(["damage", "hamilton"]))
+        self.assertTrue(d["answer"].startswith("Hamilton has damage"))
+
     def test_ask_when_not_running(self):
         code, d = ask.fetch("/status", "127.0.0.1", 1)   # nothing listens on port 1
         self.assertIsNone(code)

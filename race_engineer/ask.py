@@ -35,7 +35,12 @@ def build_path(words):
         return "/ask?" + urllib.parse.urlencode(q)
     if cmd == "weather":
         return "/ask?tool=weather_change"
-    raise SystemExit("Use: status | gap <driver> | tyres [driver] | pit [loss] [buffer] | weather")
+    if cmd == "damage":
+        q = {"tool": "damage_status"}
+        if args:
+            q["driver"] = " ".join(args)
+        return "/ask?" + urllib.parse.urlencode(q)
+    raise SystemExit("Use: status | gap <driver> | tyres [driver] | damage [driver] | pit [loss] [buffer] | weather")
 
 
 def fetch(path, host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=5):
@@ -51,7 +56,7 @@ def fetch(path, host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=5):
 def main(argv=None):
     words = (argv if argv is not None else sys.argv[1:])
     if not words:
-        raise SystemExit("Use: status | gap <driver> | tyres [driver] | pit [loss] [buffer] | weather")
+        raise SystemExit("Use: status | gap <driver> | tyres [driver] | damage [driver] | pit [loss] [buffer] | weather")
     code, data = fetch(build_path(words))
     if "answer" in data:
         print(data["answer"])

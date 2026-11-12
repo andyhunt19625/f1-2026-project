@@ -152,6 +152,41 @@ def pit_window(state, pit_loss_s, buffer_s=DEFAULT_BUFFER_S):
                                "measurement is still to be built."]}
 
 
+DAMAGE_PARTS = (("frontLeftWingDamage", "front-left wing"), ("frontRightWingDamage", "front-right wing"),
+                ("rearWingDamage", "rear wing"), ("floorDamage", "floor"), ("diffuserDamage", "diffuser"),
+                ("sidepodDamage", "sidepod"), ("gearBoxDamage", "gearbox"), ("engineDamage", "engine"))
+DAMAGE_FLAGS = (("drsFault", "DRS fault"), ("ersFault", "ERS fault"), ("engineBlown", "engine blown"),
+                ("engineSeized", "engine seized"))
+
+
+def damage_status(state, driver="me"):
+    """Car damage from the CarDamage packet (percent per part, as the game sends it)."""
+    with state.lock:
+        _need_ready(state)
+        slot = find_driver(state, driver)
+        if slot >= len(state.car_damage):
+            raise ToolError("No damage data yet.")
+        d = state.car_damage[slot]
+        parts = {label: d.get(key, 0) for key, label in DAMAGE_PARTS}
+        flags = [label for key, label in DAMAGE_FLAGS if d.get(key)]
+        tyres = dict(zip(WHEELS, d.get("tyresDamage", [0, 0, 0, 0])))
+        brakes = dict(zip(WHEELS, d.get("brakesDamage", [0, 0, 0, 0])))
+        who = "You have" if slot == state.player_slot() else state.name_of(slot).title() + " has"
+        hit = [f"{label} {v}%" for label, v in parts.items() if v]
+        # gearbox and engine wear build up with use, so report body damage separately
+        body = [f"{label} {parts[label]}%" for _, label in DAMAGE_PARTS[:6] if parts[label]]
+        if body:
+            text = f"{who} damage: " + ", ".join(body) + "."
+        else:
+            text = f"{who} no wing, floor, diffuser or sidepod damage."
+        if flags:
+            text += " Faults: " + ", ".join(flags) + "."
+        return {"answer": text, "parts_pct": parts, "faults": flags, "tyre_damage_pct": tyres,
+                "brake_damage_pct": brakes, "all_nonzero": hit,
+                "unverified": ["Wheel order for tyre and brake damage (RL, RR, FL, FR) is from the "
+                               "spec, not yet confirmed in the game."]}
+
+
 # Weather codes per the F1 UDP spec. Only code 0 has been seen in a saved session, so the
 # other names are unconfirmed until the wet test.
 WEATHER_NAMES = {0: "clear", 1: "light cloud", 2: "overcast", 3: "light rain",
@@ -202,4 +237,4 @@ def weather_change(state):
 
 
 TOOLS = {"gap_to": gap_to, "tyre_status": tyre_status, "pit_window": pit_window,
-         "weather_change": weather_change}
+         "weather_change": weather_change, "damage_status": damage_status}

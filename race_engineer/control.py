@@ -135,6 +135,33 @@ def cmd_on(args):
     return cmd_status(args)
 
 
+def stop_engineer():
+    pid = engineer_pid()
+    if not pid:
+        return True, "Engineer: was not running."
+    os.kill(pid, signal.SIGTERM)
+    if wait_for(lambda: engineer_pid() is None, 6):
+        return True, "Engineer: stopped."
+    return False, f"Engineer (pid {pid}) did not stop in time."
+
+
+def cmd_restart_engineer(args):
+    """Reload the engineer program (e.g. after a code update) WITHOUT touching capture."""
+    ok, msg = stop_engineer()
+    print(msg)
+    if not ok:
+        return 1
+    if capture_state() != "active":
+        print("Capture is not running, so the engineer was not restarted. Use 'on'.")
+        return 1
+    pid = start_engineer([])
+    if not wait_for(lambda: fetch("/status")[0] == 200, 8):
+        print(f"Engineer did not come up (pid {pid}). Log:\n{log_tail()}")
+        return 1
+    print(f"Engineer: restarted (pid {pid}). Capture was not touched.")
+    return cmd_status(args)
+
+
 def cmd_off(args):
     if session_in_progress() and not args.force:
         print("A session was written to in the last "
@@ -195,8 +222,10 @@ def main(argv=None):
     off = sub.add_parser("off")
     off.add_argument("--force", action="store_true")
     sub.add_parser("status")
+    sub.add_parser("restart-engineer")
     a = ap.parse_args(argv)
-    return {"on": cmd_on, "off": cmd_off, "status": cmd_status}[a.cmd](a)
+    return {"on": cmd_on, "off": cmd_off, "status": cmd_status,
+            "restart-engineer": cmd_restart_engineer}[a.cmd](a)
 
 
 if __name__ == "__main__":
