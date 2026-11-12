@@ -84,7 +84,7 @@ def save(folders, name, sessions=SESSIONS, archive=ARCHIVE, drive=DRIVE, copy_fo
         raise SystemExit(f"{out} already exists; choose another --name. Nothing was changed.")
 
     log(f"Compressing {len(paths)} folder(s), {sum(folder_size(p) for p in paths) / 1e9:.2f} GB, into {out} ...")
-    with tarfile.open(out, "w:gz") as tar:
+    with tarfile.open(out, "w:gz", compresslevel=6) as tar:   # 6: much faster than 9, similar size
         for p in paths:
             tar.add(p, arcname=p.name)
     expected = sorted(f"{p.name}/{f.relative_to(p)}" for p in paths for f in p.rglob("*") if f.is_file())
