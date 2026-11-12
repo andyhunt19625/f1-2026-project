@@ -181,7 +181,7 @@ def analyse(data, seg_m=25):
     for slot, laps in enumerate(data["laps"]):
         if slot == me:
             continue
-        g = {k: l for k, l in laps.items() if complete(l, length) and l.get("ers")}
+        g = {k: l for k, l in laps.items() if complete(l, length) and l.get("ers") and ers_active(l)}
         if g:
             k = min(g, key=lambda x: g[x]["time_ms"])
             if other is None or g[k]["time_ms"] < other[2]["time_ms"]:
@@ -255,8 +255,20 @@ def zones(bins, bin_m=25.0, thr=DEPLOY_KW):
     return out
 
 
-def best_clean(laps, length):
-    g = {k: l for k, l in laps.items() if complete(l, length) and l.get("ers")}
+MIN_STORE_SWING_J = 10000.0   # 0.01 MJ; less than this all lap = the game sent fixed values
+
+
+def ers_active(lap):
+    """True if the battery data on this lap actually changes. Seen in career Practice 3
+    (12 Nov 2026): some AI cars report the store fixed at 4.00 MJ with 0 deployed and 0
+    harvested all lap, which cannot be real use, so such laps are left out of AI comparisons."""
+    s = [e[2] for e in lap.get("ers", []) if e[2] is not None]
+    return bool(s) and (max(s) - min(s) >= MIN_STORE_SWING_J or (lap.get("deployed_J") or 0) > 0)
+
+
+def best_clean(laps, length, need_active=False):
+    g = {k: l for k, l in laps.items() if complete(l, length) and l.get("ers")
+         and (not need_active or ers_active(l))}
     if not g:
         return None, None
     k = min(g, key=lambda x: g[x]["time_ms"])
@@ -267,16 +279,19 @@ def ai_deploy(data, bin_m=25.0, top=5, thr=DEPLOY_KW):
     """Where the quickest AI cars deploy: MGU-K power averaged over each one's best clean lap,
     then over the cars, in bin_m stretches. Your best clean lap is set against it."""
     length, me = data["track_length"], data["player"]
-    cars = []
+    cars, skipped = [], []
     for slot, laps in enumerate(data["laps"]):
         if slot == me:
             continue
-        k, l = best_clean(laps, length)
+        k, l = best_clean(laps, length, need_active=True)
         if l:
             cars.append((l["time_ms"], slot, l))
+        elif best_clean(laps, length)[1]:
+            skipped.append(data["names"][slot])
     cars = sorted(cars)[:top]
     if not cars:
-        return {"error": "No clean complete AI lap with battery data yet."}
+        return {"error": "No clean complete AI lap with real (changing) battery data yet.",
+                "skipped_fixed_values": skipped}
     per_car = [kw_bins(l, length, bin_m) for _, _, l in cars]
     avg = []
     for i in range(len(per_car[0])):
@@ -290,19 +305,24 @@ def ai_deploy(data, bin_m=25.0, top=5, thr=DEPLOY_KW):
             lo, hi = int(z["from_m"] // bin_m), int(z["to_m"] // bin_m)
             v = [x for x in my_bins[lo:hi] if x is not None]
             z["you_avg_kw"] = round(sum(v) / len(v)) if v else None
-    return {"cars": [data["names"][s] for _, s, _ in cars], "bin_m": bin_m, "threshold_kw": thr,
+    return {"cars": [data["names"][s] for _, s, _ in cars], "skipped_fixed_values": skipped,
+            "bin_m": bin_m, "threshold_kw": thr,
             "ai_zones": ai_zones, "your_zones": zones(my_bins, bin_m, thr) if my_bins else []}
 
 
 def ai_deploy_report(res):
     if "error" in res:
-        return res["error"]
+        return res["error"] + (f" Left out (battery values fixed all lap): {', '.join(n.title() for n in res['skipped_fixed_values'])}."
+                               if res.get("skipped_fixed_values") else "")
     out = [f"Where the AI deploys (average of {', '.join(n.title() for n in res['cars'])}, best clean laps; "
            f"'deploying' = MGU-K above {res['threshold_kw']:.0f} kW, my threshold):"]
     for z in res["ai_zones"]:
         you = z.get("you_avg_kw")
         out.append(f"  {z['from_m']:>5}-{z['to_m']:<5} m: AI avg {z['avg_kw']} kW (peak {z['peak_kw']})"
                    + (f" | you {you} kW there" if you is not None else ""))
+    if res.get("skipped_fixed_values"):
+        out.append("  Left out, battery values fixed all lap (game data, not real use): "
+                   + ", ".join(n.title() for n in res["skipped_fixed_values"]))
     out.append("Where YOU deploy on your best clean lap:")
     for z in res["your_zones"]:
         out.append(f"  {z['from_m']:>5}-{z['to_m']:<5} m: avg {z['avg_kw']} kW (peak {z['peak_kw']})")

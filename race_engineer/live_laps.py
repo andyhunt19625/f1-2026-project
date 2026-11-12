@@ -78,9 +78,10 @@ class LiveLaps:
     def _prune(self, slot):
         """AI car: keep only its best clean lap and the lap in progress."""
         b = self.builders[slot]
-        best_k, _ = ers.best_clean(b.laps, self.length)
+        best_k, _ = ers.best_clean(b.laps, self.length)                       # quickest lap (for lap times)
+        active_k, _ = ers.best_clean(b.laps, self.length, need_active=True)   # quickest with real battery data
         for k in list(b.laps):
-            if k not in (best_k, b.prev_key):
+            if k not in (best_k, active_k, b.prev_key):
                 del b.laps[k]
 
     # ---- analysis -------------------------------------------------------

@@ -8,13 +8,16 @@ from race_engineer import ers_analysis
 LENGTH = 1000
 
 
-def build(path):
+def build(path, fixed_car=False):
     """Two cars, 1000 m lap: 0-500 m straight (steer 0, 250 km/h), 500-1000 m slow corner
     (steer 0.3, 100 km/h). Lap time 20 s, both cars, 10 m samples.
     You (slot 0): MGU-K 100 kW on the straight, store 4.0 -> 3.0 MJ there, flat in the corner.
     AI (slot 1): MGU-K 100 kW in the corner, store 4.0 -> 3.5 MJ there, flat on the straight."""
-    lines = [{"packet_name": "Participants", "frameIdentifier": 0, "numActiveCars": 2,
-              "participants": [{"aiControlled": 0, "name": "NORRIS"}, {"aiControlled": 1, "name": "SAINZ"}]},
+    cars = (0, 1, 2) if fixed_car else (0, 1)
+    parts = [{"aiControlled": 0, "name": "NORRIS"}, {"aiControlled": 1, "name": "SAINZ"},
+             {"aiControlled": 1, "name": "PIASTRI"}][:len(cars)]
+    lines = [{"packet_name": "Participants", "frameIdentifier": 0, "numActiveCars": len(cars),
+              "participants": parts},
              {"packet_name": "Session", "frameIdentifier": 0, "trackLength": LENGTH}]
     frame = 1
     for lap in (1, 2, 3):
@@ -22,7 +25,7 @@ def build(path):
             straight = d < 500
             t_ms = d * 20
             lds, tels, sts = [], [], []
-            for car in (0, 1):
+            for car in cars:
                 lds.append({"lapDistance": float(d), "currentLapTimeInMS": t_ms, "currentLapNum": lap,
                             "currentLapInvalid": 0, "pitStatus": 0, "driverStatus": 1,
                             "lastLapTimeInMS": 20000 if lap > 1 else 0})
@@ -31,11 +34,15 @@ def build(path):
                 if car == 0:
                     store = 4e6 - 1e6 * min(d, 500) / 500
                     mguk = 100000.0 if straight else 0.0
-                else:
+                elif car == 1:
                     store = 4e6 - 0.5e6 * max(0, d - 500) / 500
                     mguk = 0.0 if straight else 100000.0
+                else:   # fixed placeholder values, as seen from some AI cars in career P3
+                    store, mguk = 4e6, 0.0
+                fixed = car == 2
                 sts.append({"ersStoreEnergy": store, "enginePowerMGUK": mguk, "ersDeployMode": 1,
-                            "ersDeployedThisLap": 1e6, "ersHarvestedThisLapMGUK": 0.2e6,
+                            "ersDeployedThisLap": 0.0 if fixed else 1e6,
+                            "ersHarvestedThisLapMGUK": 0.0 if fixed else 0.2e6,
                             "ersHarvestedThisLapMGUH": 0.0, "ersHarvestLimitPerLap": 6.5e6})
             for name, key, val in (("LapData", "lapData", lds), ("CarStatus", "carStatusData", sts),
                                    ("CarTelemetry", "carTelemetryData", tels)):
@@ -80,6 +87,19 @@ class ErsTests(unittest.TestCase):
         text = ers_analysis.report(self.res)
         self.assertIn("Sainz", text)
         self.assertIn("straight", text)
+
+
+class FixedValueTests(unittest.TestCase):
+    def test_ai_with_fixed_battery_values_is_left_out(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "parsed.jsonl")
+            build(p, fixed_car=True)
+            data = ers_analysis.load(p)
+            ai = ers_analysis.ai_deploy(data)
+            self.assertEqual(ai["cars"], ["SAINZ"])
+            self.assertEqual(ai["skipped_fixed_values"], ["PIASTRI"])
+            self.assertIn("Left out", ers_analysis.ai_deploy_report(ai))
+            self.assertEqual(ers_analysis.analyse(data)["other"]["driver"], "SAINZ")
 
 
 if __name__ == "__main__":
