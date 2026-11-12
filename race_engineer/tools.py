@@ -179,7 +179,10 @@ def weather_change(state):
         peak = max(samples, key=lambda x: x["rainPercentage"])
         change = next((x for x in samples if x["weather"] != cur), None)
         notes = ["timeOffset is assumed to be minutes from now (spec), not yet confirmed.",
-                 "Weather names other than 'clear' are from the spec, not yet seen in a saved session."]
+                 "Seen in real sessions: code 0 clear; code 3 when the game was set to 'wet' "
+                 "(Montreal sprint); code 5 when set to 'very wet' (Austria race). Names here "
+                 "are the spec's; the game's own on-screen names for 3 and 5 are not confirmed, "
+                 "and codes 1, 2 and 4 have not been seen."]
         if change:
             mins = change["timeOffset"]
             text = (f"The weather is forecast to change from {_wname(cur)} to "
