@@ -87,7 +87,7 @@ class LapAnalysisTests(unittest.TestCase):
 
     def test_needs_two_clean_laps(self):
         laps, length, _ = load(self.path)
-        del laps[(1, 3)]
+        del laps[(1, 3, 0)]
         res = analyse(laps, length, 100)
         self.assertIn("error", res)
         self.assertIn("lap 4", report(res))
@@ -137,7 +137,56 @@ class TwoRunTests(unittest.TestCase):
             self.assertEqual(res["per_lap"]["lap 2"]["gap_to_best_ms"], 1000)
             total = sum(s["loss_ms"] for s in res["per_lap"]["lap 2"]["segments"])
             self.assertAlmostEqual(total, 1000, delta=30)   # segment losses add up to the lap gap
-            self.assertEqual(len(laps[(1, 2)]["samples"]), LENGTH // 10)  # not mixed with run 2
+            self.assertEqual(len(laps[(1, 2, 0)]["samples"]), LENGTH // 10)  # not mixed with run 2
+
+
+def build_garage_then_flying(path):
+    """Copies the pattern seen in Australia P1 (12 Nov 2026): lap 1 flying 20 s, then lap 2 starts,
+    the car goes to the garage (driverStatus 0, pitStatus 1), comes out on an out-lap
+    (driverStatus 3), and at the line the status turns to flying (1) and the timer restarts,
+    STILL lap 2. That flying part takes 19 s, then lap 3 starts with lastLap = 19000."""
+    lines = [{"packet_name": "Participants", "frameIdentifier": 0, "numActiveCars": 1,
+              "participants": [{"aiControlled": 0, "name": "NORRIS"}]},
+             {"packet_name": "Session", "frameIdentifier": 0, "trackLength": LENGTH}]
+    frame = [1]
+
+    def add(lap, dist, t_ms, status, pit, last):
+        ld = {"lapDistance": float(dist), "currentLapTimeInMS": t_ms, "currentLapNum": lap,
+              "currentLapInvalid": 0, "pitStatus": pit, "lastLapTimeInMS": last, "driverStatus": status}
+        tel = {"speed": 200, "throttle": 1.0, "brake": 0.0, "gear": 7, "steer": 0.0}
+        lines.append({"packet_name": "LapData", "frameIdentifier": frame[0], "lapData": [ld]})
+        lines.append({"packet_name": "CarTelemetry", "frameIdentifier": frame[0], "carTelemetryData": [tel]})
+        frame[0] += 1
+
+    for d in range(0, LENGTH, 10):                       # lap 1 flying, 20 s
+        add(1, d, int(d / LENGTH * 20000), 1, 0, 0)
+    for d in range(0, 100, 10):                          # lap 2 starts flying ...
+        add(2, d, int(d / LENGTH * 20000), 1, 0, 20000)
+    for d in (5000, 5100, 5200):                         # ... then the garage
+        add(2, d, 0, 0, 1, 20000)
+    for d in range(600, LENGTH, 50):                     # out-lap from the pit exit
+        add(2, d, (d - 600) * 30, 3, 0, 20000)
+    for d in range(0, LENGTH, 10):                       # flying lap from the line, same lap number
+        add(2, d, int(d / LENGTH * 19000), 1, 0, 20000)
+    add(3, 1, 0, 1, 0, 19000)                            # lap 3 starts: lap 2 took 19.000 s
+    with open(path, "w") as f:
+        f.write("\n".join(json.dumps(x) for x in lines) + "\n")
+
+
+class GarageFlyingTests(unittest.TestCase):
+    def test_flying_lap_after_garage_is_kept_with_its_own_time(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "parsed.jsonl")
+            build_garage_then_flying(p)
+            laps, length, _ = load(p)
+            res = analyse(laps, length, 100)
+            self.assertEqual(res["clean_laps"], ["lap 1", "lap 2 (from the line)"])
+            self.assertEqual(res["best_lap"], "lap 2 (from the line)")
+            self.assertEqual(res["best_time_ms"], 19000)
+            self.assertTrue(res["all_laps"]["lap 2"]["pit"])          # the garage part is excluded
+            self.assertIsNone(res["all_laps"]["lap 2"]["time_ms"])
+            total = sum(s["loss_ms"] for s in res["per_lap"]["lap 1"]["segments"])
+            self.assertAlmostEqual(total, 1000, delta=30)
 
 
 if __name__ == "__main__":

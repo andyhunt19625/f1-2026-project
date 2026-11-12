@@ -142,6 +142,10 @@ def report(res, top=5):
         out.append(f"  {s['from_m']:>5}-{s['to_m']:<5} m: {s['avg_loss_ms'] / 1000:+.3f} s over {s['laps']} lap(s)")
     for n, l in res["per_lap"].items():
         out += ["", f"{n}: {fmt_ms(l['time_ms'])} (+{l['gap_to_best_ms'] / 1000:.3f} s). Biggest losses:"]
+        total = sum(s["loss_ms"] for s in l["segments"])
+        if abs(total - l["gap_to_best_ms"]) > 50:
+            out.append(f"  WARNING: the pieces add up to {total / 1000:+.3f} s, not the real gap; "
+                       f"this lap is NOT reliable.")
         for s in sorted(l["segments"], key=lambda x: -x["loss_ms"])[:3]:
             y, b = s["you"] or {}, s["best"] or {}
             out.append(f"  {s['from_m']}-{s['to_m']} m: {s['loss_ms'] / 1000:+.3f} s | min speed "

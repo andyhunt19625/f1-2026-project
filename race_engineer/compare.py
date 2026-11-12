@@ -201,6 +201,10 @@ def report(res, top=5):
         out += ["", f"vs {r['driver'].title()} ({r['lap']}, {fmt_ms(r['best_lap_ms'])}, "
                     f"{r['gap_ms'] / 1000:.3f} s quicker):"]
         out.append("  by type: " + ", ".join(f"{k} {v / 1000:+.3f} s" for k, v in r["loss_by_type_ms"].items()))
+        total = sum(r["loss_by_type_ms"].values())
+        if abs(total - r["gap_ms"]) > 50:
+            out.append(f"  WARNING: these add up to {total / 1000:+.3f} s but the real lap gap is "
+                       f"{r['gap_ms'] / 1000:.3f} s, so this comparison is NOT reliable.")
         for c in sorted(r["corners"], key=lambda c: -c["loss_ms"])[:top]:
             y, t = c["you"], c["them"]
             out.append(f"  corner {c['corner']} ({c['type']}, {c['from_m']}-{c['to_m']} m): "

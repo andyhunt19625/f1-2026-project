@@ -51,26 +51,44 @@ def read_events(path):
                         mine.pop(next(iter(mine)))
 
 
+FLYING = 1   # driverStatus per the F1 UDP spec: 0 garage, 1 flying lap, 2 in lap, 3 out lap, 4 on track
+
+
 class LapBuilder:
-    """Builds one car's laps. A lap is keyed (run, lapNum); a new run starts whenever the
-    lap number goes backwards, so laps from different runs are never merged."""
+    """Builds one car's laps, keyed (run, lapNum, part).
+    - A new run starts whenever the lap number goes backwards (a session restart).
+    - A new part of the same lap number starts when driverStatus changes INTO flying lap.
+      Seen in real data (Madrid and Australia practice, 12 Nov 2026): after a garage visit the
+      game keeps the lap number, the car does its out-lap, and at the line the status turns to
+      flying lap and the lap timer restarts, still under the same lap number. Without the split,
+      the garage frames (pit status) were merged into the flying lap and it was thrown away.
+    The lap time (lastLapTimeInMS at the next lap number) belongs to the last part."""
 
     def __init__(self):
         self.laps = {}
         self.prev_num = None
         self.prev_key = None
+        self.prev_status = None
         self.run = 1
+        self.part = 0
 
     def add(self, ld, tel):
         num = ld["currentLapNum"]
+        status = ld.get("driverStatus")
         if self.prev_num is not None and num < self.prev_num:
             self.run += 1
-        key = (self.run, num)
+            self.part = 0
+        elif self.prev_num is not None and num != self.prev_num:
+            self.part = 0
+        elif (status == FLYING and self.prev_status is not None and self.prev_status != FLYING
+              and self.prev_key in self.laps):
+            self.part += 1
+        key = (self.run, num, self.part)
         lap = self.laps.setdefault(key, {"samples": [], "time_ms": None, "valid": True, "pit": False})
-        if (self.prev_key is not None and key != self.prev_key and key[0] == self.prev_key[0]
+        if (self.prev_key is not None and key[:2] != self.prev_key[:2] and key[0] == self.prev_key[0]
                 and num == self.prev_num + 1 and self.prev_key in self.laps):
             self.laps[self.prev_key]["time_ms"] = ld["lastLapTimeInMS"] or None
-        self.prev_num, self.prev_key = num, key
+        self.prev_num, self.prev_key, self.prev_status = num, key, status
         lap["valid"] = lap["valid"] and not ld["currentLapInvalid"]
         lap["pit"] = lap["pit"] or bool(ld["pitStatus"])
         if ld["lapDistance"] >= 0:
@@ -79,5 +97,8 @@ class LapBuilder:
 
 
 def lap_label(key):
-    run, num = key
-    return f"lap {num}" if run == 1 else f"run {run} lap {num}"
+    run, num = key[0], key[1]
+    part = key[2] if len(key) > 2 else 0
+    label = f"lap {num}" if run == 1 else f"run {run} lap {num}"
+    # part > 0: the flying lap that starts at the line after a garage visit or restart
+    return label + (" (from the line)" if part == 1 else f" (from the line, part {part + 1})" if part else "")
