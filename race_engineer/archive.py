@@ -202,9 +202,38 @@ def copy_paths(rels, base=ESPORTS, drive=DRIVE, log=print):
     return done
 
 
-def verify(rels, base=ESPORTS, drive=DRIVE, log=print):
+def copy_as(pairs, base=ESPORTS, drive=DRIVE, log=print):
+    """Copy single files to a NEW name on the drive ("logs/capture.log=logs/capture.server.log"),
+    so a different file already on the drive is kept and nothing is overwritten. Checked by sha256."""
+    if drive is None or not Path(drive).is_dir():
+        raise SystemExit(f"The external drive is not available at {drive}.")
+    done = []
+    for pair in pairs:
+        rel, _, new = pair.partition("=")
+        src = _under(base, rel)
+        if not src.is_file() or not new:
+            raise SystemExit(f"Use SRC=DEST with SRC a file in the project folder: {pair}")
+        dest = _under(drive, new)
+        if dest.exists():
+            if sha256(dest) == sha256(src):
+                log(f"{dest} already there and identical; skipped.")
+                done.append(str(dest))
+                continue
+            raise SystemExit(f"{dest} already exists and differs; not overwriting.")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dest)
+        if sha256(dest) != sha256(src):
+            raise SystemExit(f"Copy check FAILED for {dest}.")
+        log(f"{src} -> {dest}: copy matches (sha256).")
+        done.append(str(dest))
+    return done
+
+
+def verify(rels, base=ESPORTS, drive=DRIVE, log=print, ignore=()):
     """Before deleting from the server: every file under each folder must exist on the drive at
-    the same relative path with the same size. Returns True only if everything matches."""
+    the same relative path with the same size. Files matching an --ignore pattern (relative path,
+    shell-style) are listed but not required. Returns True only if everything else matches."""
+    import fnmatch
     if drive is None or not Path(drive).is_dir():
         raise SystemExit(f"The external drive is not available at {drive}.")
     ok, n, missing = True, 0, []
@@ -212,6 +241,10 @@ def verify(rels, base=ESPORTS, drive=DRIVE, log=print):
         src = _under(base, rel)
         files = [src] if src.is_file() else sorted(p for p in src.rglob("*") if p.is_file())
         for f in files:
+            relpath = f.relative_to(Path(base).resolve()).as_posix()
+            if any(fnmatch.fnmatch(relpath, pat) for pat in ignore):
+                log(f"ignored as agreed: {relpath}")
+                continue
             n += 1
             d = Path(drive) / f.relative_to(Path(base).resolve())
             if not d.is_file() or d.stat().st_size != f.stat().st_size:
@@ -236,19 +269,24 @@ def main(argv=None):
     c.add_argument("--capture", action="store_true", help="also copy ~/esports/capture/*.py")
     c.add_argument("--path", action="append", default=[],
                    help="file or folder relative to the project folder (e.g. logs)")
+    c.add_argument("--as", dest="as_pairs", action="append", default=[],
+                   help="copy one file to a new name on the drive: SRC=DEST (relative paths)")
     c.add_argument("folders", nargs="*")
     v = sub.add_parser("verify", help="check every file under these project paths is on the drive")
+    v.add_argument("--ignore", action="append", default=[], help="relative path pattern not required")
     v.add_argument("paths", nargs="+")
     a = ap.parse_args(argv)
     if a.cmd == "list":
         return cmd_list()
     if a.cmd == "verify":
-        return 0 if verify(a.paths) else 1
+        return 0 if verify(a.paths, ignore=a.ignore) else 1
     if a.cmd == "copy":
         if a.archive or a.folders or a.capture:
             copy_existing(a.archive, a.folders, a.capture)
         if a.path:
             copy_paths(a.path)
+        if a.as_pairs:
+            copy_as(a.as_pairs)
         return 0
     save(a.folders, a.name, copy_folders=a.copy_folders)
     return 0

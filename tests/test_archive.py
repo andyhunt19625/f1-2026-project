@@ -97,6 +97,19 @@ class ArchiveTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             archive.copy_paths(["../outside"], base, self.drive, log=lambda *_: None)
 
+    def test_copy_as_keeps_both_and_verify_ignore(self):
+        base = Path(self.tmp.name)
+        (base / "logs").mkdir()
+        (base / "logs" / "capture.log").write_text("server log\n")
+        (self.drive / "logs").mkdir()
+        (self.drive / "logs" / "capture.log").write_text("pc log, different\n")
+        archive.copy_as(["logs/capture.log=logs/capture.server.log"], base, self.drive, log=lambda *_: None)
+        self.assertEqual((self.drive / "logs" / "capture.log").read_text(), "pc log, different\n")
+        self.assertEqual((self.drive / "logs" / "capture.server.log").read_text(), "server log\n")
+        self.assertFalse(archive.verify(["logs"], base, self.drive, log=lambda *_: None))
+        self.assertTrue(archive.verify(["logs"], base, self.drive, log=lambda *_: None,
+                                       ignore=["logs/capture.log"]))
+
     def test_name_must_be_simple(self):
         with self.assertRaises(SystemExit):
             self.run_save(name="Madrid Practice!")
