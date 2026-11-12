@@ -13,12 +13,15 @@ from .replay import replay
 from .state import LiveState
 from .tools import DEFAULT_BUFFER_S, ToolError, gap_to, pit_window, tyre_status, weather_change
 
-HELP = "gap <driver> | tyres [driver] | pit | weather | who | quit"
+HELP = "gap <driver> | tyres [driver] | pit | weather | who | status | quit"
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("path")
+    ap.add_argument("path", nargs="?", help="parsed.jsonl to replay (omit with --live)")
+    ap.add_argument("--live", action="store_true",
+                    help="listen on 127.0.0.1:20778 for the capture service's forwarded packets")
+    ap.add_argument("--parser", default=None, help="path to the capture's parser.py")
     ap.add_argument("--until", type=float, default=None)
     ap.add_argument("--speed", type=float, default=0.0)
     ap.add_argument("--pit-loss", type=float, default=None, help="seconds; not measured yet")
@@ -26,7 +29,13 @@ def main(argv=None):
     a = ap.parse_args(argv)
 
     state = LiveState()
-    if a.speed > 0:
+    if a.live:
+        from .live import DEFAULT_PARSER, LiveFeed, load_parser
+        feed = LiveFeed(state, load_parser(a.parser or DEFAULT_PARSER)).start()
+        print(f"Listening for forwarded packets on 127.0.0.1:{feed.port}")
+    elif not a.path:
+        ap.error("give a parsed.jsonl path or --live")
+    elif a.speed > 0:
         threading.Thread(target=replay, args=(a.path, state, a.speed, a.until), daemon=True).start()
     else:
         replay(a.path, state, 0.0, a.until)
@@ -54,6 +63,11 @@ def main(argv=None):
             elif cmd == "who":
                 s = state.player_slot()
                 print(f"Your slot: {s}, name: {state.name_of(s) if s is not None else None}")
+                continue
+            elif cmd == "status":
+                print(f"packets seen by state: {dict(state.counts)}; session time: {state.session_time}")
+                if a.live:
+                    print(f"datagrams received: {feed.received}; decode errors: {feed.errors}")
                 continue
             else:
                 print(HELP)

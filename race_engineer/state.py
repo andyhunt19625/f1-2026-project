@@ -22,6 +22,14 @@ class LiveState:
     def __init__(self, player_slot=None):
         self.lock = threading.RLock()
         self.player_slot_override = player_slot
+        self._clear()
+
+    def reset(self):
+        """Forget everything (a new game session started)."""
+        with self.lock:
+            self._clear()
+
+    def _clear(self):
         self.session = None
         self.participants = []
         self.num_active = 0
