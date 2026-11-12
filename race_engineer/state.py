@@ -10,7 +10,9 @@ Everything here is read-only with respect to the capture service.
 import threading
 from collections import Counter
 
-WANTED = ("Session", "Participants", "LapData", "CarDamage", "CarStatus")
+from .live_laps import LiveLaps
+
+WANTED = ("Session", "Participants", "LapData", "CarDamage", "CarStatus", "CarTelemetry")
 
 
 def ms_from_parts(ms_part, minutes_part):
@@ -19,9 +21,10 @@ def ms_from_parts(ms_part, minutes_part):
 
 
 class LiveState:
-    def __init__(self, player_slot=None):
+    def __init__(self, player_slot=None, lap_log=None):
         self.lock = threading.RLock()
         self.player_slot_override = player_slot
+        self.lap_log = lap_log
         self._clear()
 
     def reset(self):
@@ -45,6 +48,8 @@ class LiveState:
         self._last_stops = {}
         # Per car pit lane time in lane: {"active": bool, "current_ms": int, "completed_ms": [..]}
         self.pit_lane = {}
+        # Lap-by-lap analysis while driving (see live_laps.py)
+        self.live_laps = LiveLaps(self.lap_log) if self.lap_log else LiveLaps()
 
     # ---- ingest -------------------------------------------------------
     def ingest(self, pkt):
@@ -53,6 +58,10 @@ class LiveState:
             return
         with self.lock:
             self.counts[name] += 1
+            try:
+                self.live_laps.ingest(pkt)
+            except Exception:          # the lap analysis must never stop the question tools
+                self.counts["live_laps_errors"] += 1
             if "sessionTime" in pkt:
                 self.session_time = pkt["sessionTime"]
             if name == "Session":

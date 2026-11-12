@@ -223,6 +223,92 @@ def analyse(data, seg_m=25):
             "by_type": by_type, "sections": secs}
 
 
+DEPLOY_KW = 20.0   # a stretch counts as "deploying" when average MGU-K power is above this (my threshold)
+
+
+def kw_bins(lap, length, bin_m=25.0):
+    """Average MGU-K power (kW, zero when harvesting or off) in each bin_m stretch of one lap."""
+    n = int(length // bin_m) + 1
+    sums, cnt = [0.0] * n, [0] * n
+    for e in ers_series(lap):
+        if e[3] is None:
+            continue
+        i = min(n - 1, int(e[0] // bin_m))
+        sums[i] += max(e[3], 0.0) / 1000.0
+        cnt[i] += 1
+    return [sums[i] / cnt[i] if cnt[i] else None for i in range(n)]
+
+
+def zones(bins, bin_m=25.0, thr=DEPLOY_KW):
+    out = []
+    for i, v in enumerate(bins):
+        if v is not None and v >= thr:
+            if out and out[-1]["_last"] == i - 1:
+                z = out[-1]
+                z["to_m"], z["_last"], z["_vals"] = round((i + 1) * bin_m), i, z["_vals"] + [v]
+            else:
+                out.append({"from_m": round(i * bin_m), "to_m": round((i + 1) * bin_m), "_last": i, "_vals": [v]})
+    for z in out:
+        vals = z.pop("_vals")
+        z.pop("_last")
+        z["avg_kw"], z["peak_kw"] = round(sum(vals) / len(vals)), round(max(vals))
+    return out
+
+
+def best_clean(laps, length):
+    g = {k: l for k, l in laps.items() if complete(l, length) and l.get("ers")}
+    if not g:
+        return None, None
+    k = min(g, key=lambda x: g[x]["time_ms"])
+    return k, g[k]
+
+
+def ai_deploy(data, bin_m=25.0, top=5, thr=DEPLOY_KW):
+    """Where the quickest AI cars deploy: MGU-K power averaged over each one's best clean lap,
+    then over the cars, in bin_m stretches. Your best clean lap is set against it."""
+    length, me = data["track_length"], data["player"]
+    cars = []
+    for slot, laps in enumerate(data["laps"]):
+        if slot == me:
+            continue
+        k, l = best_clean(laps, length)
+        if l:
+            cars.append((l["time_ms"], slot, l))
+    cars = sorted(cars)[:top]
+    if not cars:
+        return {"error": "No clean complete AI lap with battery data yet."}
+    per_car = [kw_bins(l, length, bin_m) for _, _, l in cars]
+    avg = []
+    for i in range(len(per_car[0])):
+        v = [b[i] for b in per_car if b[i] is not None]
+        avg.append(sum(v) / len(v) if v else None)
+    _, mine = best_clean(data["laps"][me], length)
+    my_bins = kw_bins(mine, length, bin_m) if mine else None
+    ai_zones = zones(avg, bin_m, thr)
+    for z in ai_zones:
+        if my_bins:
+            lo, hi = int(z["from_m"] // bin_m), int(z["to_m"] // bin_m)
+            v = [x for x in my_bins[lo:hi] if x is not None]
+            z["you_avg_kw"] = round(sum(v) / len(v)) if v else None
+    return {"cars": [data["names"][s] for _, s, _ in cars], "bin_m": bin_m, "threshold_kw": thr,
+            "ai_zones": ai_zones, "your_zones": zones(my_bins, bin_m, thr) if my_bins else []}
+
+
+def ai_deploy_report(res):
+    if "error" in res:
+        return res["error"]
+    out = [f"Where the AI deploys (average of {', '.join(n.title() for n in res['cars'])}, best clean laps; "
+           f"'deploying' = MGU-K above {res['threshold_kw']:.0f} kW, my threshold):"]
+    for z in res["ai_zones"]:
+        you = z.get("you_avg_kw")
+        out.append(f"  {z['from_m']:>5}-{z['to_m']:<5} m: AI avg {z['avg_kw']} kW (peak {z['peak_kw']})"
+                   + (f" | you {you} kW there" if you is not None else ""))
+    out.append("Where YOU deploy on your best clean lap:")
+    for z in res["your_zones"]:
+        out.append(f"  {z['from_m']:>5}-{z['to_m']:<5} m: avg {z['avg_kw']} kW (peak {z['peak_kw']})")
+    return "\n".join(out)
+
+
 def report(res):
     if "error" in res:
         return res["error"]
@@ -264,8 +350,11 @@ def main(argv=None):
     ap.add_argument("--segment-m", type=float, default=25.0)
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
-    res = analyse(load(a.path), a.segment_m)
-    print(json.dumps(res, indent=1) if a.json else report(res))
+    data = load(a.path)
+    res = analyse(data, a.segment_m)
+    ai = ai_deploy(data)
+    print(json.dumps({"laps": res, "ai_deploy": ai}, indent=1) if a.json
+          else report(res) + "\n\n" + ai_deploy_report(ai))
 
 
 if __name__ == "__main__":

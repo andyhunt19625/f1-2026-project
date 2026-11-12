@@ -9,6 +9,7 @@ Endpoints (GET, JSON):
   /ask?tool=tyre_status[&driver=hamilton]
   /ask?tool=pit_window[&pit_loss=S][&buffer=S]
   /ask?tool=weather_change
+  /ask?tool=last_lap | laps | ai_deploy   (lap analysis while driving, see live_laps.py)
 
 Binds to 127.0.0.1 by default. There is NO authentication, so do not bind it to a
 network address without adding some.
@@ -51,7 +52,17 @@ def run_tool(state, q, cfg):
         return weather_change(state)
     if tool == "damage_status":
         return damage_status(state, q.get("driver", "me"))
-    raise ToolError("Unknown tool. Use gap_to, tyre_status, pit_window, weather_change or damage_status.")
+    if tool == "last_lap":
+        with state.lock:
+            return state.live_laps.last()
+    if tool == "laps":
+        with state.lock:
+            return state.live_laps.all()
+    if tool == "ai_deploy":
+        with state.lock:
+            return state.live_laps.ai_deploy()
+    raise ToolError("Unknown tool. Use gap_to, tyre_status, pit_window, weather_change, damage_status, "
+                    "last_lap, laps or ai_deploy.")
 
 
 def status(state, feed):

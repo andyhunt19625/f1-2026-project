@@ -5,6 +5,7 @@
   python3 -m race_engineer.ask tyres [driver]
   python3 -m race_engineer.ask pit [pit_loss_seconds] [buffer_seconds]
   python3 -m race_engineer.ask weather
+  python3 -m race_engineer.ask lap | laps | aideploy
 """
 import json
 import sys
@@ -13,6 +14,9 @@ import urllib.parse
 import urllib.request
 
 from .server import DEFAULT_HOST, DEFAULT_PORT
+
+USAGE = ("Use: status | gap <driver> | tyres [driver] | damage [driver] | pit [loss] [buffer] | weather"
+         " | lap | laps | aideploy")
 
 
 def build_path(words):
@@ -40,7 +44,9 @@ def build_path(words):
         if args:
             q["driver"] = " ".join(args)
         return "/ask?" + urllib.parse.urlencode(q)
-    raise SystemExit("Use: status | gap <driver> | tyres [driver] | damage [driver] | pit [loss] [buffer] | weather")
+    if cmd in ("lap", "laps", "aideploy"):
+        return "/ask?tool=" + {"lap": "last_lap", "laps": "laps", "aideploy": "ai_deploy"}[cmd]
+    raise SystemExit(USAGE)
 
 
 def fetch(path, host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=5):
@@ -56,7 +62,7 @@ def fetch(path, host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=5):
 def main(argv=None):
     words = (argv if argv is not None else sys.argv[1:])
     if not words:
-        raise SystemExit("Use: status | gap <driver> | tyres [driver] | damage [driver] | pit [loss] [buffer] | weather")
+        raise SystemExit(USAGE)
     code, data = fetch(build_path(words))
     if "answer" in data:
         print(data["answer"])
