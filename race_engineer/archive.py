@@ -129,6 +129,48 @@ def save(folders, name, sessions=SESSIONS, archive=ARCHIVE, drive=DRIVE, copy_fo
             "drive_folders": copied}
 
 
+def copy_file_checked(src, dest_dir, log=print):
+    """Copy one file into dest_dir and check it by sha256. Never overwrites."""
+    src = Path(src)
+    Path(dest_dir).mkdir(parents=True, exist_ok=True)
+    dest = Path(dest_dir) / src.name
+    if dest.exists():
+        if sha256(dest) == sha256(src):
+            log(f"{dest} already there and identical (sha256); skipped.")
+            return str(dest)
+        raise SystemExit(f"{dest} already exists and differs; not overwriting.")
+    log(f"Copying {src} -> {dest} ...")
+    shutil.copyfile(src, dest)
+    if sha256(dest) != sha256(src):
+        raise SystemExit(f"Copy check FAILED for {dest}.")
+    log(f"{dest.name}: copy matches (sha256).")
+    return str(dest)
+
+
+def copy_existing(archives=(), folders=(), capture=False, sessions=SESSIONS, archive=ARCHIVE,
+                  drive=DRIVE, capture_dir=ESPORTS / "capture", log=print):
+    """Copy already-made archives, session folders and/or the capture code to the drive,
+    checking each copy. Never deletes, never overwrites a different file."""
+    if not Path(drive).is_dir():
+        raise SystemExit(f"The external drive is not available at {drive}.")
+    done = []
+    for name in archives:
+        done.append(copy_file_checked(Path(archive) / name, Path(drive) / "archive", log))
+    for f in folders:
+        src = Path(sessions) / f
+        if not src.is_dir():
+            raise SystemExit(f"Not a session folder: {src}")
+        if recently_written(src):
+            raise SystemExit(f"{src.name} was written in the last {ACTIVE_WITHIN_S} s; stop capture first.")
+        for file in sorted(p for p in src.rglob("*") if p.is_file()):
+            done.append(copy_file_checked(file, Path(drive) / "sessions" / f / file.parent.relative_to(src), log))
+    if capture:
+        for file in sorted(Path(capture_dir).glob("*.py")):
+            done.append(copy_file_checked(file, Path(drive) / "capture", log))
+    log(f"Copied and checked {len(done)} file(s). Nothing was deleted.")
+    return done
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -137,9 +179,16 @@ def main(argv=None):
     s.add_argument("--name", required=True)
     s.add_argument("--copy-folders", action="store_true")
     s.add_argument("folders", nargs="+")
+    c = sub.add_parser("copy", help="copy existing archives / folders / capture code to the drive")
+    c.add_argument("--archive", action="append", default=[], help="archive file name in ~/esports/archive")
+    c.add_argument("--capture", action="store_true", help="also copy ~/esports/capture/*.py")
+    c.add_argument("folders", nargs="*")
     a = ap.parse_args(argv)
     if a.cmd == "list":
         return cmd_list()
+    if a.cmd == "copy":
+        copy_existing(a.archive, a.folders, a.capture)
+        return 0
     save(a.folders, a.name, copy_folders=a.copy_folders)
     return 0
 

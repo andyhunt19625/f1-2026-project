@@ -63,6 +63,27 @@ class ArchiveTests(unittest.TestCase):
                          log=lambda *_: None)
         self.assertIn("not available", str(cm.exception))
 
+    def test_copy_existing_archive_folders_and_capture(self):
+        self.arch.mkdir()
+        (self.arch / "sessions_20261029_jeddah_race.tar.gz").write_bytes(os.urandom(3000))
+        cap = Path(self.tmp.name) / "capture"
+        cap.mkdir()
+        (cap / "udp_capture.py").write_text("print('x')\n")
+        (cap / "notes.txt").write_text("not copied")
+        done = archive.copy_existing(["sessions_20261029_jeddah_race.tar.gz"], [self.folder.name], True,
+                                     self.sessions, self.arch, self.drive, cap, log=lambda *_: None)
+        self.assertEqual(len(done), 1 + 3 + 1)
+        self.assertTrue((self.drive / "archive" / "sessions_20261029_jeddah_race.tar.gz").is_file())
+        self.assertTrue((self.drive / "sessions" / self.folder.name / "raw.bin").is_file())
+        self.assertTrue((self.drive / "capture" / "udp_capture.py").is_file())
+        self.assertFalse((self.drive / "capture" / "notes.txt").exists())
+        # running again is safe: identical files are skipped, nothing overwritten
+        archive.copy_existing(["sessions_20261029_jeddah_race.tar.gz"], [], False, self.sessions,
+                              self.arch, self.drive, cap, log=lambda *_: None)
+        (self.drive / "capture" / "udp_capture.py").write_text("changed\n")
+        with self.assertRaises(SystemExit):
+            archive.copy_existing([], [], True, self.sessions, self.arch, self.drive, cap, log=lambda *_: None)
+
     def test_name_must_be_simple(self):
         with self.assertRaises(SystemExit):
             self.run_save(name="Madrid Practice!")
