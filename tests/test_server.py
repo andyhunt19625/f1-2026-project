@@ -103,6 +103,13 @@ class ControlTests(unittest.TestCase):
     def test_session_in_progress_missing_folder(self):
         self.assertFalse(control.session_in_progress("/no/such/folder"))
 
+    def test_listening_parses_ss_output(self):
+        class R:
+            stdout = ("UNCONN 0      0            0.0.0.0:20777      0.0.0.0:*\n"
+                      "UNCONN 0      0            0.0.0.0:5353       0.0.0.0:*\n")
+        ports = control.listening(runner=lambda cmd: R())
+        self.assertEqual(ports, {20777: True, 20778: False})
+
     def test_capture_commands_are_exactly_the_sudoers_ones(self):
         seen = []
 

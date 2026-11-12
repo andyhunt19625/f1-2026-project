@@ -163,10 +163,20 @@ def cmd_off(args):
     return 0
 
 
+def listening(ports=(20777, 20778), runner=_run):
+    """Which of the given UDP ports have a listener (from `ss -ulnH`, no sudo)."""
+    out = runner(["ss", "-ulnH"]).stdout
+    return {p: any(line.split()[3].endswith(f":{p}") for line in out.splitlines()
+                   if len(line.split()) > 3) for p in ports}
+
+
 def cmd_status(args):
     print(f"Capture: {capture_state()}")
     pid = engineer_pid()
     print(f"Engineer: {'running (pid %d)' % pid if pid else 'not running'}")
+    ports = listening()
+    print(f"Listening: capture port 20777 {'yes' if ports[20777] else 'no'}, "
+          f"engineer port 20778 {'yes' if ports[20778] else 'no'}")
     if pid:
         code, data = fetch("/status")
         print(f"  status: {data}")
