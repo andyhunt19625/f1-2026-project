@@ -138,6 +138,9 @@ def pit_window(state, pit_loss_s, buffer_s=DEFAULT_BUFFER_S):
         if ok:
             text = (f"Yes. {name} is {gap:.1f} seconds behind; you would rejoin {clear:.1f} "
                     f"seconds clear.")
+        elif clear < 0:
+            text = (f"No. {name} is {gap:.1f} seconds behind; you would rejoin "
+                    f"{-clear:.1f} seconds behind them. You need a {need:.1f} second gap.")
         else:
             text = (f"No. {name} is {gap:.1f} seconds behind; you would rejoin "
                     f"{clear:.1f} seconds clear, short of {buffer_s:g}. You need a "

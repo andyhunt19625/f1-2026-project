@@ -67,6 +67,7 @@ class Tests(unittest.TestCase):
         self.assertAlmostEqual(r["rejoin_clear_s"], 4.0)
         self.assertAlmostEqual(r["gap_needed_s"], 31.0)
         self.assertTrue(pit_window(self.s, 26.0, 2.0)["in_window"])
+        self.assertIn("seconds behind them", pit_window(self.s, 35.0, 5.0)["answer"])
         with self.assertRaises(ToolError):
             pit_window(self.s, 26.0, 6.0)
         with self.assertRaises(ToolError):
