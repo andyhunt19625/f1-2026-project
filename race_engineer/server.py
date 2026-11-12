@@ -23,8 +23,8 @@ from urllib.parse import parse_qs, urlparse
 
 from .live import DEFAULT_PARSER, LiveFeed, load_parser
 from .state import LiveState
-from .tools import (DEFAULT_BUFFER_S, ToolError, damage_status, gap_to, pit_window, tyre_status,
-                    weather_change)
+from .tools import (DEFAULT_BUFFER_S, ToolError, damage_status, gap_to, pit_window, tyre_field,
+                    tyre_status, weather_change)
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8777
@@ -52,6 +52,8 @@ def run_tool(state, q, cfg):
         return weather_change(state)
     if tool == "damage_status":
         return damage_status(state, q.get("driver", "me"))
+    if tool == "tyre_field":
+        return tyre_field(state)
     if tool == "last_lap":
         with state.lock:
             return state.live_laps.last()
@@ -65,7 +67,7 @@ def run_tool(state, q, cfg):
         with state.lock:
             return state.live_laps.reminders()
     raise ToolError("Unknown tool. Use gap_to, tyre_status, pit_window, weather_change, damage_status, "
-                    "last_lap, laps, ai_deploy or reminders.")
+                    "tyre_field, last_lap, laps, ai_deploy or reminders.")
 
 
 def status(state, feed):

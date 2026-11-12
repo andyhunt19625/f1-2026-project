@@ -236,5 +236,35 @@ def weather_change(state):
                 "unverified": notes}
 
 
+# CarStatus.visualTyreCompound per the F1 25 UDP spec. Only 17 has been seen so far (dry
+# practice, 12 Nov 2026); the rest are the spec's names until seen in the game.
+VISUAL_TYRES = {16: "soft", 17: "medium", 18: "hard", 7: "intermediate", 8: "wet"}
+DRY = ("soft", "medium", "hard")
+
+
+def tyre_field(state):
+    """Which tyres every car is on now: how many on dry, intermediate and wet, and yours."""
+    with state.lock:
+        _need_ready(state)
+        if not state.car_status:
+            raise ToolError("No tyre compound data yet.")
+        me = state.player_slot()
+        counts, mine = {}, None
+        for i in range(min(state._n(), len(state.car_status))):
+            name = VISUAL_TYRES.get(state.car_status[i].get("visualTyreCompound"),
+                                    f"compound {state.car_status[i].get('visualTyreCompound')}")
+            if i == me:
+                mine = name
+            else:
+                counts[name] = counts.get(name, 0) + 1
+        dry = sum(v for k, v in counts.items() if k in DRY)
+        total = sum(counts.values())
+        text = (f"You are on {mine}. Of the other {total} cars: " +
+                ", ".join(f"{v} on {k}" for k, v in sorted(counts.items(), key=lambda x: -x[1])) + ".")
+        return {"answer": text, "yours": mine, "others": counts, "others_on_dry": dry, "others_total": total,
+                "unverified": ["Compound names are from the F1 25 spec; only 'medium' (17) has been seen in "
+                               "the game so far."]}
+
+
 TOOLS = {"gap_to": gap_to, "tyre_status": tyre_status, "pit_window": pit_window,
-         "weather_change": weather_change, "damage_status": damage_status}
+         "weather_change": weather_change, "damage_status": damage_status, "tyre_field": tyre_field}

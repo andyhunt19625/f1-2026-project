@@ -76,5 +76,26 @@ class DrillTests(unittest.TestCase):
         self.assertEqual(self.events()[-1]["event"], "engineer_unreachable")
 
 
+    def test_drying_forecast_and_field_tyres_logged(self):
+        self.feed_until(2 + 3 * 50)
+        self.state.ingest({"packet_name": "Session", "sessionType": 15, "trackLength": 1000, "weather": 3,
+                           "weatherForecastSamples": [
+                               {"sessionType": 15, "timeOffset": 0, "weather": 3, "rainPercentage": 60},
+                               {"sessionType": 15, "timeOffset": 5, "weather": 2, "rainPercentage": 20}]})
+        statuses = [{"visualTyreCompound": 7}, {"visualTyreCompound": 17}]
+        self.state.ingest({"packet_name": "CarStatus", "frameIdentifier": 99999, "carStatusData": statuses})
+        self.d.step()
+        self.d.step()                      # same forecast again: logged once only
+        ev = self.events()
+        dry = [e for e in ev if e["event"] == "drying_soon"]
+        self.assertEqual(len(dry), 1)
+        self.assertEqual(dry[0]["in_minutes"], 5)
+        tyres = [e for e in ev if e["event"] == "field_tyres"]
+        self.assertEqual(len(tyres), 1)
+        self.assertEqual((tyres[0]["yours"], tyres[0]["others_on_dry"], tyres[0]["others_total"]),
+                         ("intermediate", 1, 1))
+        self.assertIn("Drying forecast", drill.summary(self.log))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,11 +5,13 @@ driver would, and log what holds the answers back.
   python -m race_engineer.drill summary [run/drill_YYYYmmddTHHMMSSZ.jsonl]   (default: newest)
 
 Every --every seconds it asks /status, then the question tools in turn (gap to a driver, tyres,
-damage, pit window, weather, last lap; AI deploy and reminders less often), and records for each:
+damage, pit window, weather, everyone's tyres, last lap; AI deploy and reminders less often), and records for each:
 time taken, HTTP code, error text, and a short answer. It also watches for:
 - stuck data: packets still arriving but the session clock not moving;
 - idle: no packets arriving (menus, pause, replays);
-- lap reports: when your lap number goes up, how long until a new lap report exists, or if none comes.
+- lap reports: when your lap number goes up, how long until a new lap report exists, or if none comes;
+- drying: the forecast showing drier weather within DRYING_SOON_MIN minutes;
+- tyres: every change in how many other cars are on dry tyres (often the first sign the track is ready).
 Only reads from the engineer (HTTP GET on 127.0.0.1). Writes one JSONL log in run/.
 """
 import argparse
@@ -25,6 +27,7 @@ from . import ask
 RUN = Path(__file__).resolve().parent.parent / "run"
 STOP = RUN / "drill.stop"
 LAP_REPORT_WAIT_S = 30
+DRYING_SOON_MIN = 10      # minutes ahead that counts as "soon" for a drying forecast (my choice)
 
 
 def _get(path, host, port):
@@ -40,6 +43,8 @@ class Drill:
         self.prev = None
         self.turn = 0
         self.pending_lap = None   # (lap number, wall time seen, report count then)
+        self.last_weather_alert = None
+        self.last_dry_count = None
 
     def _log(self, rec):
         rec["wall"] = round(self.clock(), 3)
@@ -93,12 +98,36 @@ class Drill:
         self._ask("tyre_status")
         self._ask("damage_status")
         self._ask("pit_window")
-        self._ask("weather_change")
+        code, w = self._ask("weather_change")
+        if code == 200:
+            self._weather_watch(w)
+        code, tf = self._ask("tyre_field")
+        if code == 200:
+            self._tyre_watch(tf)
         self._ask("last_lap")
         if self.turn % 10 == 0:
             self._ask("ai_deploy")
             self._ask("reminders")
         self.turn += 1
+
+
+    def _weather_watch(self, w):
+        """Log once per forecast when it shows drier weather within DRYING_SOON_MIN minutes."""
+        cur, to, mins = w.get("current_weather"), w.get("change_to"), w.get("change_at_minutes")
+        if to is not None and cur is not None and to < cur and mins is not None and mins <= DRYING_SOON_MIN:
+            key = (cur, to, mins)
+            if key != self.last_weather_alert:
+                self._log({"kind": "event", "event": "drying_soon", "from": w.get("current_name"),
+                           "to": to, "in_minutes": mins, "rain_pct_peak": w.get("peak_rain_pct")})
+                self.last_weather_alert = key
+
+    def _tyre_watch(self, tf):
+        """Log every change in how many other cars are on dry tyres, and what you are on."""
+        n = tf.get("others_on_dry")
+        if n != self.last_dry_count:
+            self._log({"kind": "event", "event": "field_tyres", "others_on_dry": n,
+                       "others_total": tf.get("others_total"), "yours": tf.get("yours"), "others": tf.get("others")})
+            self.last_dry_count = n
 
 
 def run(every=3.0, minutes=150.0, log_path=None):
@@ -148,6 +177,11 @@ def summary(path):
     if delays:
         out.append(f"Lap reports: {len(delays)} found, seen {min(delays)}-{max(delays)} s after the lap number changed "
                    f"(includes up to one drill interval of waiting).")
+    for e in events:
+        if e["event"] == "drying_soon":
+            out.append(f"  Drying forecast at {e['wall']:.0f}: from {e['from']} to code {e['to']} in {e['in_minutes']} min")
+        if e["event"] == "field_tyres":
+            out.append(f"  Tyres at {e['wall']:.0f}: you on {e['yours']}, {e['others_on_dry']}/{e['others_total']} others on dry")
     missing = [e["lap"] for e in events if e["event"] == "lap_report_missing"]
     if missing:
         out.append(f"Laps with NO report within {LAP_REPORT_WAIT_S} s: {missing}")

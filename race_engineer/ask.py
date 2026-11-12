@@ -16,7 +16,7 @@ import urllib.request
 from .server import DEFAULT_HOST, DEFAULT_PORT
 
 USAGE = ("Use: status | gap <driver> | tyres [driver] | damage [driver] | pit [loss] [buffer] | weather"
-         " | lap | laps | aideploy | reminders")
+         " | field | lap | laps | aideploy | reminders")
 
 
 def build_path(words):
@@ -44,6 +44,8 @@ def build_path(words):
         if args:
             q["driver"] = " ".join(args)
         return "/ask?" + urllib.parse.urlencode(q)
+    if cmd == "field":
+        return "/ask?tool=tyre_field"
     if cmd in ("lap", "laps", "aideploy", "reminders"):
         return "/ask?tool=" + {"lap": "last_lap", "laps": "laps", "aideploy": "ai_deploy",
                                "reminders": "reminders"}[cmd]
