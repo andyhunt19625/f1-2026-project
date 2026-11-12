@@ -84,6 +84,19 @@ class ArchiveTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             archive.copy_existing([], [], True, self.sessions, self.arch, self.drive, cap, log=lambda *_: None)
 
+    def test_copy_paths_and_verify(self):
+        base = Path(self.tmp.name)
+        (base / "logs").mkdir()
+        (base / "logs" / "capture.log").write_text("log line\n")
+        done = archive.copy_paths(["logs", "sessions"], base, self.drive, log=lambda *_: None)
+        self.assertEqual(len(done), 4)
+        self.assertTrue((self.drive / "logs" / "capture.log").is_file())
+        self.assertTrue(archive.verify(["logs", "sessions"], base, self.drive, log=lambda *_: None))
+        (base / "logs" / "new.log").write_text("not copied")
+        self.assertFalse(archive.verify(["logs"], base, self.drive, log=lambda *_: None))
+        with self.assertRaises(SystemExit):
+            archive.copy_paths(["../outside"], base, self.drive, log=lambda *_: None)
+
     def test_name_must_be_simple(self):
         with self.assertRaises(SystemExit):
             self.run_save(name="Madrid Practice!")

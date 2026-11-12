@@ -179,6 +179,50 @@ def copy_existing(archives=(), folders=(), capture=False, sessions=SESSIONS, arc
     return done
 
 
+def _under(base, rel):
+    p = (Path(base) / rel).resolve()
+    if Path(base).resolve() not in p.parents and p != Path(base).resolve():
+        raise SystemExit(f"{rel} is outside {base}; refusing.")
+    return p
+
+
+def copy_paths(rels, base=ESPORTS, drive=DRIVE, log=print):
+    """Copy files or folders given relative to the project folder to the same relative place
+    on the drive, checking each file by sha256. Never deletes, never overwrites a different file."""
+    if drive is None or not Path(drive).is_dir():
+        raise SystemExit(f"The external drive is not available at {drive}.")
+    done = []
+    for rel in rels:
+        src = _under(base, rel)
+        files = [src] if src.is_file() else sorted(p for p in src.rglob("*") if p.is_file())
+        for f in files:
+            dest_dir = Path(drive) / f.parent.relative_to(Path(base).resolve())
+            done.append(copy_file_checked(f, dest_dir, log))
+    log(f"Copied and checked {len(done)} file(s). Nothing was deleted.")
+    return done
+
+
+def verify(rels, base=ESPORTS, drive=DRIVE, log=print):
+    """Before deleting from the server: every file under each folder must exist on the drive at
+    the same relative path with the same size. Returns True only if everything matches."""
+    if drive is None or not Path(drive).is_dir():
+        raise SystemExit(f"The external drive is not available at {drive}.")
+    ok, n, missing = True, 0, []
+    for rel in rels:
+        src = _under(base, rel)
+        files = [src] if src.is_file() else sorted(p for p in src.rglob("*") if p.is_file())
+        for f in files:
+            n += 1
+            d = Path(drive) / f.relative_to(Path(base).resolve())
+            if not d.is_file() or d.stat().st_size != f.stat().st_size:
+                ok = False
+                missing.append(str(f))
+    for m in missing[:20]:
+        log(f"NOT on the drive (or different size): {m}")
+    log(f"Verified {n - len(missing)} of {n} file(s) on the drive." + ("" if ok else " NOT SAFE TO DELETE."))
+    return ok
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -190,12 +234,21 @@ def main(argv=None):
     c = sub.add_parser("copy", help="copy existing archives / folders / capture code to the drive")
     c.add_argument("--archive", action="append", default=[], help="archive file name in ~/esports/archive")
     c.add_argument("--capture", action="store_true", help="also copy ~/esports/capture/*.py")
+    c.add_argument("--path", action="append", default=[],
+                   help="file or folder relative to the project folder (e.g. logs)")
     c.add_argument("folders", nargs="*")
+    v = sub.add_parser("verify", help="check every file under these project paths is on the drive")
+    v.add_argument("paths", nargs="+")
     a = ap.parse_args(argv)
     if a.cmd == "list":
         return cmd_list()
+    if a.cmd == "verify":
+        return 0 if verify(a.paths) else 1
     if a.cmd == "copy":
-        copy_existing(a.archive, a.folders, a.capture)
+        if a.archive or a.folders or a.capture:
+            copy_existing(a.archive, a.folders, a.capture)
+        if a.path:
+            copy_paths(a.path)
         return 0
     save(a.folders, a.name, copy_folders=a.copy_folders)
     return 0
