@@ -1,0 +1,11 @@
+{
+  "_about": "Things Andy has learned that the engineer should remind him of. Each entry: when (session group), check (optional), text. Session groups come from Session.sessionType (F1 25 UDP spec): practice 1-4, qualifying 5-14, race 15-17, time_trial 18.",
+  "reminders": [
+    {
+      "added": "2026-11-12, Australia qualifying (career)",
+      "when": ["qualifying", "practice"],
+      "check": "ers_mode_none",
+      "text": "Pole lap 1:16.749 was done with ERS mode on NONE and deploying by hand where needed. The first two laps on hotlap/medium mode were 0.96-1.15 s slower."
+    }
+  ]
+}

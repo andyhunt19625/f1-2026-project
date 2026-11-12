@@ -55,5 +55,43 @@ class LiveLapTests(unittest.TestCase):
         self.assertLessEqual(len(b.laps), 2)
 
 
+class ReminderTests(unittest.TestCase):
+    RULE = [{"when": ["qualifying", "practice"], "check": "ers_mode_none", "text": "Use mode none."}]
+
+    def run_session(self, session_type, mode):
+        from race_engineer.live_laps import LiveLaps
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "parsed.jsonl")
+            build(p)
+            ll = LiveLaps(Path(d) / "log.txt", playbook=self.RULE)
+            with open(p) as f:
+                for line in f:
+                    pkt = json.loads(line)
+                    if pkt["packet_name"] == "Session":
+                        pkt["sessionType"] = session_type
+                    for st in pkt.get("carStatusData", []):
+                        st["ersDeployMode"] = mode
+                    ll.ingest(pkt)
+            return ll
+
+    def test_qualifying_on_hotlap_mode_reminds_every_lap(self):
+        ll = self.run_session(5, 2)
+        for r in ll.reports:
+            self.assertIn("ERS mode: hotlap 100%", r["text"])
+            self.assertIn("REMINDER: Use mode none. This lap was on mode none only 0%", r["text"])
+        self.assertIn("Use mode none.", ll.reminders()["answer"])
+
+    def test_qualifying_on_mode_none_reminds_once(self):
+        ll = self.run_session(5, 0)
+        self.assertIn("REMINDER: Use mode none.", ll.reports[0]["text"])
+        self.assertNotIn("REMINDER", ll.reports[1]["text"])
+
+    def test_no_reminder_in_race_or_mode_line_in_time_trial(self):
+        self.assertNotIn("REMINDER", self.run_session(15, 2).reports[1]["text"])
+        tt = self.run_session(18, 2)
+        self.assertNotIn("ERS mode", tt.reports[1]["text"])
+        self.assertNotIn("REMINDER", tt.reports[1]["text"])
+
+
 if __name__ == "__main__":
     unittest.main()

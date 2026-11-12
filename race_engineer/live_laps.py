@@ -10,6 +10,7 @@ Same lap rules as the saved-session tools (session_reader.LapBuilder, lap_analys
 To keep memory small over a long session, AI cars keep only their best clean lap and the
 lap in progress; your laps are all kept.
 """
+import json
 import os
 from pathlib import Path
 
@@ -18,6 +19,33 @@ from .lap_analysis import compare, complete, fmt_ms
 from .session_reader import lap_label
 
 LOG = Path(__file__).resolve().parent.parent / "run" / "live_laps.txt"
+PLAYBOOK = Path(__file__).resolve().parent / "playbook.json"
+# ersDeployMode names from the F1 25 UDP spec. Checked against Andy's own account of his
+# Australia qualifying laps (12 Nov 2026) before use in reminders.
+MODE_NAMES = {0: "none", 1: "medium", 2: "hotlap", 3: "overtake"}
+
+
+def session_group(t):
+    """Session.sessionType (F1 25 UDP spec) -> practice / qualifying / race / time_trial."""
+    if t is None:
+        return None
+    if 1 <= t <= 4:
+        return "practice"
+    if 5 <= t <= 14:
+        return "qualifying"
+    if 15 <= t <= 17:
+        return "race"
+    if t == 18:
+        return "time_trial"
+    return None
+
+
+def load_playbook(path=PLAYBOOK):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f).get("reminders", [])
+    except (OSError, ValueError):
+        return []
 FIELDS = {"LapData": "lapData", "CarTelemetry": "carTelemetryData", "CarStatus": "carStatusData"}
 WINDOW = 64
 
@@ -34,8 +62,11 @@ class _Builder(ers.ErsLapBuilder):
 
 
 class LiveLaps:
-    def __init__(self, log_path=LOG):
+    def __init__(self, log_path=LOG, playbook=None):
         self.log_path = log_path
+        self.playbook = load_playbook() if playbook is None else playbook
+        self.session_type = None
+        self.reminded = set()
         self.names, self.n, self.player, self.length = [], 0, None, None
         self.builders = []
         self.pend = {k: {} for k in FIELDS}
@@ -55,6 +86,8 @@ class LiveLaps:
         elif name == "Session":
             if pkt.get("trackLength"):
                 self.length = pkt["trackLength"]
+            if pkt.get("sessionType") is not None:
+                self.session_type = pkt["sessionType"]
         elif name in FIELDS:
             fr = pkt.get("frameIdentifier")
             self.pend[name][fr] = pkt[FIELDS[name]]
@@ -129,6 +162,22 @@ class LiveLaps:
                          f"{s['deployed_MJ']:.2f}, harvested {s['harvested_MJ']:.2f}; lowest {s['store_min_MJ']:.2f} MJ "
                          f"at {s['store_min_at_m']} m. Most spent: " +
                          ", ".join(f"{f}-{t} m ({d / 1e6:+.2f})" for d, f, t in top))
+            modes = s["deploy_mode_share"]
+            group = session_group(self.session_type)
+            if group != "time_trial":
+                lines.append("  ERS mode: " + ", ".join(f"{MODE_NAMES.get(m, m)} {p}%" for m, p in modes.items()))
+            for i, r in enumerate(self.playbook):
+                if group not in r.get("when", []):
+                    continue
+                if r.get("check") == "ers_mode_none":
+                    none_pct = modes.get(0, 0)
+                    if none_pct < 50:
+                        lines.append(f"  REMINDER: {r['text']} This lap was on mode none only {none_pct}% of the time.")
+                        self.reminded.add(i)
+                        continue
+                if i not in self.reminded:
+                    lines.append(f"  REMINDER: {r['text']}")
+                    self.reminded.add(i)
         ai = None
         for slot, b in enumerate(self.builders):
             if slot == self.player:
@@ -162,6 +211,12 @@ class LiveLaps:
     def all(self):
         return {"answer": "\n\n".join(r["text"] for r in self.reports) or "No lap finished yet in this session.",
                 "count": len(self.reports)}
+
+    def reminders(self):
+        group = session_group(self.session_type)
+        items = [r["text"] for r in self.playbook if group in r.get("when", [])]
+        return {"session_group": group, "reminders": items,
+                "answer": "\n".join("REMINDER: " + t for t in items) or f"No reminders for this session ({group})."}
 
     def ai_deploy(self):
         if not self.builders or not self.length:

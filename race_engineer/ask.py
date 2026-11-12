@@ -5,7 +5,7 @@
   python3 -m race_engineer.ask tyres [driver]
   python3 -m race_engineer.ask pit [pit_loss_seconds] [buffer_seconds]
   python3 -m race_engineer.ask weather
-  python3 -m race_engineer.ask lap | laps | aideploy
+  python3 -m race_engineer.ask lap | laps | aideploy | reminders
 """
 import json
 import sys
@@ -16,7 +16,7 @@ import urllib.request
 from .server import DEFAULT_HOST, DEFAULT_PORT
 
 USAGE = ("Use: status | gap <driver> | tyres [driver] | damage [driver] | pit [loss] [buffer] | weather"
-         " | lap | laps | aideploy")
+         " | lap | laps | aideploy | reminders")
 
 
 def build_path(words):
@@ -44,8 +44,9 @@ def build_path(words):
         if args:
             q["driver"] = " ".join(args)
         return "/ask?" + urllib.parse.urlencode(q)
-    if cmd in ("lap", "laps", "aideploy"):
-        return "/ask?tool=" + {"lap": "last_lap", "laps": "laps", "aideploy": "ai_deploy"}[cmd]
+    if cmd in ("lap", "laps", "aideploy", "reminders"):
+        return "/ask?tool=" + {"lap": "last_lap", "laps": "laps", "aideploy": "ai_deploy",
+                               "reminders": "reminders"}[cmd]
     raise SystemExit(USAGE)
 
 
