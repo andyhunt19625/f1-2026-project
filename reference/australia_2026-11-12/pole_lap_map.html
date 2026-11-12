@@ -1,0 +1,149 @@
+<title>Melbourne Pole Lap Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column; summary line, then the track map as the hero, then the gain/loss table. */
+:root{
+  --bg:#f3f5f7; --panel:#ffffff; --fg:#14181d; --muted:#5d6874; --line:#d5dbe1;
+  --gain:#0f9d58; --loss:#d93025; --flat:#9aa5b1; --accent:#1f5fbf;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1216; --panel:#161b21; --fg:#e8edf2; --muted:#94a0ad; --line:#2a323b;
+  --gain:#34c77b; --loss:#ff5f52; --flat:#5f6b77; --accent:#6aa3ff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1216; --panel:#161b21; --fg:#e8edf2; --muted:#94a0ad; --line:#2a323b;
+  --gain:#34c77b; --loss:#ff5f52; --flat:#5f6b77; --accent:#6aa3ff; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:980px;margin:0 auto;display:grid;gap:20px}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(2rem,5vw,2.8rem);line-height:1;margin:0;letter-spacing:.01em;text-wrap:balance}
+.eyebrow{font-family:var(--mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.times{display:flex;flex-wrap:wrap;gap:12px 28px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.times div{display:grid}
+.times b{font-family:var(--display);font-size:1.7rem;font-weight:600;line-height:1.1}
+.times .g b{color:var(--gain)}
+.map{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;gap:10px}
+svg{width:100%;height:auto;display:block;touch-action:manipulation}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:.85rem;color:var(--muted);align-items:center}
+.sw{display:inline-block;width:22px;height:6px;border-radius:3px;vertical-align:middle;margin-right:6px}
+.tip{font-family:var(--mono);font-size:.85rem;min-height:2.6em;color:var(--fg);font-variant-numeric:tabular-nums}
+.note{font-size:.85rem;color:var(--muted);max-width:68ch}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
+.cols > section{min-width:0}
+h2{font-family:var(--display);font-weight:600;font-size:1.35rem;margin:0 0 6px;letter-spacing:.02em}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:.82rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:6px 6px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:500;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase}
+td.n{text-align:right}
+tr{cursor:pointer}
+tr:hover td,tr.on td{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.gain{color:var(--gain)} .loss{color:var(--loss)}
+.seg{cursor:pointer}
+.seg:focus{outline:none}
+.km{font-family:var(--mono);fill:var(--fg);paint-order:stroke;stroke:var(--panel);stroke-width:4px}
+@media (prefers-reduced-motion:no-preference){.seg{transition:stroke-width .15s}}
+</style>
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <div class="eyebrow">Australia · career qualifying · your laps</div>
+    <h1>Where the pole lap found 0.958 s</h1>
+    <div class="times">
+      <div><span class="eyebrow">Pole lap (lap 3)</span><b id="t-lap"></b></div>
+      <div><span class="eyebrow">Compared with lap 2</span><b id="t-ref"></b></div>
+      <div class="g"><span class="eyebrow">Difference</span><b id="t-gap"></b></div>
+    </div>
+  </header>
+  <div class="map">
+    <svg id="map" role="img" aria-label="Track map coloured by time gained or lost in each 100 metres"></svg>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--gain)"></span>Pole lap quicker</span>
+      <span><span class="sw" style="background:var(--loss)"></span>Pole lap slower</span>
+      <span><span class="sw" style="background:var(--flat)"></span>Within 0.010 s</span>
+      <span>Thicker = bigger difference</span>
+    </div>
+    <div class="tip" id="tip">Tap or hover a section of track for its numbers.</div>
+  </div>
+  <div class="cols">
+    <section><h2>Biggest gains</h2><table id="gains"></table></section>
+    <section><h2>Where lap 2 was quicker</h2><table id="losses"></table></section>
+  </div>
+  <p class="note">Each section is 100 m of lap distance. Gain = time the pole lap made up on lap 2 in that section. Sections add up to 0.986 s against the real gap of 0.958 s. The track shape is drawn from your car's position on the pole lap; the map's rotation comes from the game's coordinates, so north may not be at the top. At 1000–1200 m one corner is split over two sections (+0.154 s then −0.267 s): across the whole corner lap 2 was 0.113 s quicker.</p>
+</div>
+<script>
+const D = {"lap":"lap 3 (from the line)","lap_ms":76749,"ref":"lap 2 (from the line)","ref_ms":77707,"track_length":5276,"points":[[0.6,-116.86,462.45],[11.0,-124.32,455.26],[21.4,-131.8,448.03],[31.8,-139.31,440.77],[42.3,-146.85,433.46],[52.9,-154.4,426.11],[63.4,-161.96,418.72],[74.0,-169.56,411.31],[84.7,-177.19,403.89],[95.3,-184.88,396.49],[106.0,-192.61,389.09],[116.8,-200.37,381.68],[127.5,-208.16,374.27],[138.3,-215.99,366.86],[149.1,-223.86,359.47],[159.9,-231.77,352.1],[170.7,-239.71,344.74],[181.6,-247.67,337.37],[192.4,-255.59,329.95],[203.3,-263.47,322.46],[214.2,-271.32,314.93],[225.1,-279.14,307.36],[236.0,-286.97,299.79],[246.8,-294.82,292.24],[257.7,-302.69,284.71],[268.6,-310.59,277.23],[279.2,-318.3,269.96],[290.7,-326.63,262.13],[302.7,-335.36,253.91],[313.7,-343.36,246.23],[324.0,-350.54,238.9],[334.6,-357.51,230.82],[345.5,-363.91,221.79],[356.1,-369.27,212.06],[366.5,-373.5,201.49],[377.8,-375.63,193.64],[389.8,-376.76,186.63],[400.2,-377.33,175.23],[411.0,-376.66,163.71],[421.2,-375.14,153.92],[431.3,-372.99,144.07],[441.6,-370.95,134.95],[451.8,-369.23,125.63],[462.1,-368.2,116.11],[472.2,-367.99,106.44],[482.5,-368.68,96.61],[492.9,-370.34,86.72],[503.4,-372.95,76.84],[514.2,-376.46,67.03],[525.1,-380.79,57.36],[536.1,-385.93,47.86],[547.1,-391.89,38.63],[557.1,-397.9,30.58],[567.2,-404.42,22.7],[577.5,-411.39,14.99],[588.0,-418.79,7.47],[598.7,-426.59,0.13],[609.6,-434.74,-7.09],[620.7,-443.17,-14.22],[631.9,-451.76,-21.43],[642.1,-459.48,-27.95],[652.3,-467.22,-34.65],[662.7,-474.97,-41.53],[673.2,-482.73,-48.57],[683.8,-490.49,-55.78],[694.5,-498.23,-63.13],[705.3,-505.94,-70.64],[716.2,-513.63,-78.31],[727.2,-521.33,-86.11],[738.3,-529.02,-94.04],[749.4,-536.7,-102.1],[760.7,-544.39,-110.27],[772.0,-552.09,-118.54],[783.4,-559.82,-126.89],[793.4,-566.6,-134.27],[803.5,-573.37,-141.71],[813.6,-580.09,-149.28],[823.7,-586.65,-157.02],[833.9,-593.06,-164.92],[844.1,-599.35,-172.95],[854.4,-605.54,-181.11],[864.6,-611.65,-189.38],[875.0,-617.72,-197.73],[885.3,-623.79,-206.11],[895.7,-629.89,-214.52],[906.1,-636.02,-222.93],[916.6,-642.23,-231.33],[927.1,-648.5,-239.7],[937.6,-654.81,-248.08],[948.0,-661.09,-256.49],[958.5,-667.35,-264.93],[969.0,-673.53,-273.43],[979.5,-679.61,-282.01],[989.7,-685.46,-290.47],[1000.8,-691.68,-299.66],[1011.3,-697.45,-308.49],[1022.5,-703.38,-318.03],[1032.8,-708.71,-326.95],[1043.4,-714.05,-336.05],[1053.8,-719.21,-345.12],[1064.1,-723.91,-354.3],[1074.2,-727.8,-363.68],[1084.4,-730.5,-373.87],[1094.6,-731.4,-384.34],[1104.7,-730.38,-392.81],[1114.8,-727.77,-400.01],[1124.9,-722.43,-407.59],[1135.2,-713.8,-414.29],[1145.5,-704.0,-418.43],[1155.9,-693.67,-420.51],[1166.5,-683.01,-421.1],[1176.6,-672.69,-421.04],[1186.9,-662.26,-421.1],[1197.2,-651.91,-421.89],[1207.7,-641.59,-423.91],[1217.8,-631.94,-427.29],[1228.1,-622.68,-432.34],[1238.2,-615.0,-438.29],[1248.6,-608.83,-444.83],[1259.1,-603.74,-452.09],[1269.8,-599.47,-460.7],[1279.9,-596.32,-470.17],[1290.0,-594.24,-480.41],[1300.0,-593.29,-490.57],[1310.8,-593.26,-501.32],[1321.2,-593.94,-511.72],[1332.1,-595.21,-522.52],[1342.4,-596.78,-532.76],[1353.1,-598.72,-543.36],[1363.1,-600.75,-553.28],[1373.4,-602.89,-563.49],[1384.0,-604.88,-573.99],[1396.0,-606.52,-585.87],[1407.0,-607.32,-596.92],[1417.1,-607.39,-607.04],[1427.3,-606.72,-617.23],[1437.4,-605.29,-627.43],[1447.6,-603.15,-637.61],[1459.6,-599.97,-648.84],[1471.3,-596.26,-658.66],[1481.7,-592.29,-667.06],[1492.6,-587.06,-676.03],[1502.8,-581.06,-684.5],[1513.0,-574.39,-692.52],[1523.3,-567.12,-700.07],[1534.0,-559.19,-707.23],[1545.2,-550.43,-714.21],[1556.3,-541.48,-720.88],[1567.2,-532.65,-727.11],[1578.0,-523.59,-733.15],[1588.9,-514.34,-739.07],[1600.0,-504.92,-744.91],[1611.1,-495.29,-750.66],[1621.1,-486.56,-755.68],[1631.3,-477.7,-760.65],[1641.5,-468.7,-765.55],[1651.9,-459.56,-770.4],[1662.4,-450.28,-775.14],[1673.0,-440.83,-779.71],[1683.6,-431.21,-784.09],[1694.3,-421.44,-788.29],[1705.0,-411.55,-792.37],[1715.7,-401.56,-796.39],[1726.6,-391.52,-800.44],[1737.4,-381.47,-804.63],[1748.4,-371.44,-809.0],[1759.3,-361.48,-813.56],[1770.3,-351.56,-818.32],[1781.3,-341.68,-823.26],[1792.5,-331.87,-828.4],[1803.6,-322.15,-833.77],[1814.6,-312.72,-839.21],[1825.0,-303.84,-844.37],[1835.8,-294.42,-849.52],[1845.8,-285.35,-853.82],[1856.2,-275.46,-857.6],[1867.0,-264.75,-860.52],[1877.1,-254.26,-862.14],[1887.5,-244.82,-862.53],[1898.2,-237.28,-862.18],[1908.4,-229.77,-861.23],[1918.9,-219.54,-859.01],[1929.3,-208.51,-855.52],[1939.8,-198.43,-851.39],[1950.2,-189.37,-846.84],[1962.3,-179.3,-841.33],[1972.3,-170.75,-836.93],[1982.5,-161.84,-832.81],[1992.9,-152.58,-829.03],[2003.3,-142.97,-825.66],[2013.8,-133.04,-822.72],[2024.3,-122.83,-820.23],[2034.9,-112.36,-818.14],[2045.7,-101.67,-816.41],[2056.8,-90.83,-814.75],[2066.8,-81.09,-813.04],[2077.0,-71.31,-810.98],[2087.3,-61.55,-808.47],[2099.0,-50.63,-805.07],[2109.5,-41.05,-801.51],[2120.1,-31.6,-797.44],[2130.7,-22.3,-792.9],[2141.3,-13.15,-787.93],[2153.4,-3.1,-781.8],[2164.1,5.54,-775.83],[2174.8,13.83,-769.36],[2185.6,21.74,-762.41],[2196.3,29.25,-755.0],[2207.1,36.36,-747.18],[2217.9,43.05,-739.0],[2228.6,49.33,-730.49],[2239.4,55.19,-721.65],[2250.2,60.61,-712.52],[2261.0,65.62,-703.13],[2271.7,70.19,-693.49],[2282.5,74.27,-683.64],[2293.2,77.87,-673.58],[2303.9,81.01,-663.35],[2314.6,83.76,-652.98],[2325.3,86.18,-642.5],[2336.1,88.35,-631.92],[2347.0,90.41,-621.25],[2357.9,92.4,-610.49],[2369.0,94.34,-599.63],[2380.1,96.23,-588.69],[2391.2,98.06,-577.66],[2402.5,99.81,-566.55],[2413.8,101.42,-555.36],[2425.2,102.8,-544.07],[2435.2,103.75,-534.12],[2445.3,104.39,-524.13],[2455.4,104.69,-514.1],[2465.6,104.63,-504.04],[2475.7,104.24,-493.97],[2485.9,103.57,-483.89],[2496.1,102.66,-473.79],[2507.9,101.33,-462.25],[2519.6,99.66,-450.72],[2530.0,97.87,-440.67],[2540.3,95.78,-430.66],[2550.6,93.4,-420.71],[2560.9,90.74,-410.8],[2571.2,87.82,-400.95],[2581.5,84.61,-391.17],[2591.8,81.14,-381.47],[2602.2,77.42,-371.86],[2612.5,73.48,-362.32],[2622.8,69.38,-352.82],[2633.2,65.21,-343.32],[2643.6,61.09,-333.79],[2654.0,57.07,-324.2],[2664.4,53.16,-314.55],[2674.8,49.39,-304.84],[2685.2,45.79,-295.06],[2695.6,42.4,-285.2],[2706.0,39.21,-275.27],[2716.4,36.24,-265.27],[2726.8,33.5,-255.21],[2737.3,30.98,-245.1],[2747.7,28.68,-234.94],[2758.1,26.61,-224.75],[2768.5,24.78,-214.52],[2779.0,23.2,-204.27],[2789.4,21.92,-194.0],[2799.8,20.94,-183.72],[2810.2,20.26,-173.44],[2820.6,19.82,-163.15],[2831.1,19.57,-152.86],[2841.5,19.51,-142.58],[2851.9,19.62,-132.3],[2862.2,19.9,-122.03],[2872.7,20.42,-111.79],[2883.0,21.23,-101.58],[2893.4,22.35,-91.43],[2903.7,23.79,-81.33],[2914.0,25.55,-71.32],[2924.3,27.66,-61.4],[2934.5,30.09,-51.58],[2944.7,32.83,-41.86],[2954.9,35.82,-32.23],[2965.1,39.01,-22.67],[2975.3,42.41,-13.19],[2985.5,46.05,-3.81],[2995.7,49.95,5.44],[3005.9,54.1,14.57],[3016.0,58.51,23.57],[3026.1,63.17,32.43],[3036.2,68.06,41.16],[3046.3,73.16,49.75],[3056.4,78.52,58.18],[3066.5,84.12,66.42],[3076.6,89.93,74.51],[3086.7,95.94,82.45],[3096.7,102.11,90.27],[3106.8,108.38,98.0],[3116.9,114.76,105.67],[3126.9,121.24,113.24],[3136.9,127.83,120.72],[3148.3,135.5,129.13],[3159.7,143.33,137.4],[3171.0,151.32,145.52],[3182.4,159.48,153.46],[3193.8,167.81,161.23],[3205.1,176.26,168.87],[3216.5,184.75,176.47],[3227.9,193.28,184.05],[3239.4,201.85,191.59],[3250.8,210.48,199.04],[3263.2,220.12,206.98],[3273.9,228.62,213.39],[3284.1,237.15,219.06],[3294.9,246.76,224.41],[3305.3,256.36,228.66],[3316.1,266.0,231.88],[3327.1,275.69,234.14],[3337.6,285.4,235.48],[3348.5,296.16,235.9],[3359.2,306.83,235.25],[3369.9,317.38,233.59],[3380.6,327.86,231.28],[3391.4,338.48,229.15],[3402.2,349.27,227.77],[3413.0,360.13,227.31],[3423.8,370.98,227.81],[3434.7,381.67,229.34],[3445.4,391.04,231.65],[3456.1,400.17,234.65],[3466.7,410.08,238.81],[3477.4,419.77,243.86],[3488.4,429.24,249.7],[3498.6,437.65,255.49],[3509.0,446.0,261.7],[3519.6,454.28,268.29],[3530.3,462.58,275.13],[3541.2,470.99,282.17],[3552.4,479.5,289.36],[3562.4,487.13,295.9],[3572.6,494.81,302.62],[3582.9,502.54,309.5],[3593.4,510.3,316.49],[3603.9,518.12,323.62],[3614.6,525.98,330.89],[3625.5,533.89,338.28],[3636.4,541.82,345.82],[3647.4,549.79,353.48],[3658.6,557.77,361.27],[3669.8,565.77,369.19],[3681.1,573.74,377.25],[3691.1,580.7,384.42],[3701.3,587.62,391.71],[3711.5,594.42,399.17],[3721.9,601.02,406.84],[3732.2,607.43,414.69],[3742.5,613.63,422.7],[3752.8,619.63,430.87],[3763.0,625.39,439.2],[3773.2,630.91,447.69],[3783.4,636.18,456.34],[3793.5,641.2,465.14],[3803.6,645.97,474.07],[3813.7,650.5,483.13],[3823.7,654.77,492.31],[3833.8,658.76,501.61],[3843.8,662.47,511.03],[3853.9,665.9,520.56],[3864.0,669.05,530.18],[3874.1,671.95,539.88],[3884.3,674.61,549.65],[3894.4,677.14,559.48],[3904.5,679.69,569.31],[3914.7,682.36,579.13],[3924.9,685.16,588.93],[3935.1,688.04,598.72],[3945.3,690.96,608.51],[3955.5,693.94,618.3],[3965.8,696.98,628.08],[3976.1,700.05,637.87],[3986.3,703.16,647.67],[3996.6,706.29,657.48],[4006.9,709.44,667.29],[4017.2,712.62,677.1],[4027.5,715.82,686.92],[4037.8,719.0,696.73],[4047.8,722.07,706.28],[4058.7,725.38,716.61],[4068.7,728.44,726.27],[4079.2,731.53,736.38],[4090.8,734.66,747.73],[4101.3,737.0,758.12],[4111.9,738.56,768.63],[4122.3,738.95,779.1],[4132.7,737.82,789.92],[4142.9,734.89,800.41],[4153.8,732.21,806.22],[4164.1,727.39,813.02],[4174.6,718.67,820.98],[4184.6,709.61,826.12],[4194.8,699.91,829.72],[4205.1,689.9,832.12],[4215.4,679.76,833.79],[4225.5,669.73,835.1],[4236.3,659.0,836.55],[4247.0,648.43,838.34],[4257.4,638.21,840.46],[4267.4,628.51,842.76],[4277.8,618.48,845.38],[4288.5,608.22,848.34],[4299.4,597.84,851.56],[4309.4,588.31,854.69],[4319.6,578.68,857.96],[4330.0,568.93,861.3],[4340.4,559.01,864.52],[4351.0,548.86,867.34],[4361.4,538.54,869.47],[4371.5,528.3,870.64],[4381.7,518.25,870.81],[4391.9,508.44,870.03],[4402.3,498.95,868.36],[4412.6,489.81,865.92],[4422.9,481.05,862.66],[4433.0,472.58,858.63],[4443.7,463.77,853.21],[4454.1,455.6,846.81],[4464.3,448.05,839.55],[4475.6,440.48,830.81],[4486.4,434.09,822.02],[4496.5,428.75,813.4],[4506.9,423.79,804.27],[4517.5,419.1,794.7],[4528.4,414.56,784.78],[4539.5,410.09,774.58],[4549.7,406.03,765.17],[4561.2,401.42,754.52],[4572.9,396.59,743.8],[4582.9,392.24,734.72],[4593.0,387.61,725.62],[4603.1,382.72,716.74],[4613.8,377.1,707.56],[4624.1,371.09,699.14],[4634.4,364.04,691.43],[4644.9,355.44,684.95],[4654.9,346.96,681.31],[4665.0,340.35,680.34],[4675.1,332.3,681.33],[4685.2,322.58,685.78],[4695.3,314.83,692.26],[4705.7,308.1,700.36],[4715.9,302.77,709.31],[4726.3,298.08,718.99],[4736.3,293.1,727.86],[4747.6,286.28,736.9],[4757.7,279.0,744.0],[4768.4,269.96,750.44],[4779.0,260.5,755.24],[4789.4,250.95,758.5],[4799.6,241.61,760.39],[4810.1,231.85,761.14],[4820.2,222.7,760.73],[4830.3,213.42,759.27],[4840.6,204.09,756.74],[4851.7,193.99,752.77],[4861.8,184.93,748.06],[4872.1,176.03,742.41],[4882.8,167.14,736.07],[4893.7,158.61,729.27],[4903.9,150.94,722.51],[4914.1,143.5,715.5],[4924.4,136.19,708.26],[4934.7,128.89,700.92],[4945.0,121.62,693.66],[4955.2,114.38,686.52],[4966.4,106.36,678.67],[4977.4,98.48,670.94],[4988.6,90.51,663.06],[4998.8,83.31,655.94],[5009.1,75.94,648.7],[5019.6,68.4,641.38],[5030.2,60.81,634.06],[5040.8,53.11,626.67],[5051.6,45.31,619.22],[5062.5,37.44,611.71],[5073.5,29.51,604.13],[5083.8,22.02,596.98],[5094.3,14.47,589.79],[5104.5,7.08,582.73],[5114.5,-0.17,575.77],[5125.8,-8.31,567.93],[5137.1,-16.44,560.1],[5148.4,-24.58,552.25],[5159.8,-32.74,544.37],[5171.1,-40.92,536.47],[5182.5,-49.11,528.54],[5194.0,-57.32,520.59],[5204.2,-64.69,513.45],[5214.5,-72.09,506.28],[5224.6,-79.34,499.25],[5234.7,-86.58,492.23],[5244.8,-93.83,485.19],[5254.9,-101.1,478.15],[5265.1,-108.38,471.09],[5275.2,-115.67,464.01]],"segments":[{"from_m":0,"to_m":100,"gain_ms":-5,"lap_min_kmh":318,"ref_min_kmh":327},{"from_m":100,"to_m":200,"gain_ms":-8,"lap_min_kmh":330,"ref_min_kmh":334},{"from_m":200,"to_m":300,"gain_ms":0,"lap_min_kmh":286,"ref_min_kmh":281},{"from_m":300,"to_m":400,"gain_ms":-32,"lap_min_kmh":189,"ref_min_kmh":192},{"from_m":400,"to_m":500,"gain_ms":4,"lap_min_kmh":190,"ref_min_kmh":193},{"from_m":500,"to_m":600,"gain_ms":4,"lap_min_kmh":221,"ref_min_kmh":220},{"from_m":600,"to_m":700,"gain_ms":-3,"lap_min_kmh":260,"ref_min_kmh":258},{"from_m":700,"to_m":800,"gain_ms":-22,"lap_min_kmh":290,"ref_min_kmh":292},{"from_m":800,"to_m":900,"gain_ms":-6,"lap_min_kmh":311,"ref_min_kmh":311},{"from_m":900,"to_m":1000,"gain_ms":15,"lap_min_kmh":292,"ref_min_kmh":287},{"from_m":1000,"to_m":1100,"gain_ms":154,"lap_min_kmh":115,"ref_min_kmh":108},{"from_m":1100,"to_m":1200,"gain_ms":-267,"lap_min_kmh":99,"ref_min_kmh":106},{"from_m":1200,"to_m":1300,"gain_ms":-1,"lap_min_kmh":146,"ref_min_kmh":145},{"from_m":1300,"to_m":1400,"gain_ms":29,"lap_min_kmh":174,"ref_min_kmh":175},{"from_m":1400,"to_m":1500,"gain_ms":104,"lap_min_kmh":239,"ref_min_kmh":229},{"from_m":1500,"to_m":1600,"gain_ms":34,"lap_min_kmh":249,"ref_min_kmh":237},{"from_m":1600,"to_m":1700,"gain_ms":42,"lap_min_kmh":267,"ref_min_kmh":261},{"from_m":1700,"to_m":1800,"gain_ms":31,"lap_min_kmh":289,"ref_min_kmh":281},{"from_m":1800,"to_m":1900,"gain_ms":-29,"lap_min_kmh":203,"ref_min_kmh":209},{"from_m":1900,"to_m":2000,"gain_ms":7,"lap_min_kmh":204,"ref_min_kmh":209},{"from_m":2000,"to_m":2100,"gain_ms":13,"lap_min_kmh":245,"ref_min_kmh":242},{"from_m":2100,"to_m":2200,"gain_ms":-6,"lap_min_kmh":275,"ref_min_kmh":272},{"from_m":2200,"to_m":2300,"gain_ms":10,"lap_min_kmh":285,"ref_min_kmh":282},{"from_m":2300,"to_m":2400,"gain_ms":3,"lap_min_kmh":288,"ref_min_kmh":288},{"from_m":2400,"to_m":2500,"gain_ms":30,"lap_min_kmh":304,"ref_min_kmh":302},{"from_m":2500,"to_m":2600,"gain_ms":18,"lap_min_kmh":313,"ref_min_kmh":309},{"from_m":2600,"to_m":2700,"gain_ms":16,"lap_min_kmh":318,"ref_min_kmh":310},{"from_m":2700,"to_m":2800,"gain_ms":49,"lap_min_kmh":318,"ref_min_kmh":310},{"from_m":2800,"to_m":2900,"gain_ms":7,"lap_min_kmh":314,"ref_min_kmh":312},{"from_m":2900,"to_m":3000,"gain_ms":-23,"lap_min_kmh":309,"ref_min_kmh":313},{"from_m":3000,"to_m":3100,"gain_ms":-18,"lap_min_kmh":307,"ref_min_kmh":313},{"from_m":3100,"to_m":3200,"gain_ms":-25,"lap_min_kmh":307,"ref_min_kmh":314},{"from_m":3200,"to_m":3300,"gain_ms":22,"lap_min_kmh":252,"ref_min_kmh":250},{"from_m":3300,"to_m":3400,"gain_ms":-52,"lap_min_kmh":230,"ref_min_kmh":237},{"from_m":3400,"to_m":3500,"gain_ms":-26,"lap_min_kmh":230,"ref_min_kmh":240},{"from_m":3500,"to_m":3600,"gain_ms":43,"lap_min_kmh":248,"ref_min_kmh":245},{"from_m":3600,"to_m":3700,"gain_ms":100,"lap_min_kmh":286,"ref_min_kmh":268},{"from_m":3700,"to_m":3800,"gain_ms":97,"lap_min_kmh":310,"ref_min_kmh":283},{"from_m":3800,"to_m":3900,"gain_ms":88,"lap_min_kmh":312,"ref_min_kmh":290},{"from_m":3900,"to_m":4000,"gain_ms":72,"lap_min_kmh":313,"ref_min_kmh":295},{"from_m":4000,"to_m":4100,"gain_ms":97,"lap_min_kmh":202,"ref_min_kmh":191},{"from_m":4100,"to_m":4200,"gain_ms":198,"lap_min_kmh":119,"ref_min_kmh":105},{"from_m":4200,"to_m":4300,"gain_ms":59,"lap_min_kmh":139,"ref_min_kmh":128},{"from_m":4300,"to_m":4400,"gain_ms":-24,"lap_min_kmh":207,"ref_min_kmh":208},{"from_m":4400,"to_m":4500,"gain_ms":-7,"lap_min_kmh":201,"ref_min_kmh":201},{"from_m":4500,"to_m":4600,"gain_ms":14,"lap_min_kmh":196,"ref_min_kmh":198},{"from_m":4600,"to_m":4700,"gain_ms":16,"lap_min_kmh":91,"ref_min_kmh":91},{"from_m":4700,"to_m":4800,"gain_ms":97,"lap_min_kmh":113,"ref_min_kmh":111},{"from_m":4800,"to_m":4900,"gain_ms":51,"lap_min_kmh":174,"ref_min_kmh":160},{"from_m":4900,"to_m":5000,"gain_ms":12,"lap_min_kmh":227,"ref_min_kmh":223},{"from_m":5000,"to_m":5100,"gain_ms":8,"lap_min_kmh":275,"ref_min_kmh":273},{"from_m":5100,"to_m":5200,"gain_ms":-7,"lap_min_kmh":302,"ref_min_kmh":302},{"from_m":5200,"to_m":5276,"gain_ms":3,"lap_min_kmh":309,"ref_min_kmh":310}]};
+const fmt = ms => { const m = Math.floor(ms/60000), s = (ms%60000)/1000; return m+":"+s.toFixed(3).padStart(6,"0"); };
+document.getElementById("t-lap").textContent = fmt(D.lap_ms);
+document.getElementById("t-ref").textContent = fmt(D.ref_ms);
+document.getElementById("t-gap").textContent = "−" + ((D.ref_ms - D.lap_ms)/1000).toFixed(3) + " s";
+
+const P = D.points;
+// draw clockwise on screen (Albert Park runs clockwise); mirror x if the raw points run the other way
+let area = 0;
+for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i+1)%P.length]; area += a[1]*b[2] - b[1]*a[2]; }
+const sx = area < 0 ? -1 : 1;
+const xs = P.map(p => sx*p[1]), ys = P.map(p => p[2]);
+const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+const pad = 110, W = maxX - minX, H = maxY - minY;
+const svg = document.getElementById("map");
+svg.setAttribute("viewBox", `${minX-pad} ${minY-pad} ${W+2*pad} ${H+2*pad}`);
+const NS = "http://www.w3.org/2000/svg";
+const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const scale = Math.max(W, H) / 600;   // stroke widths in "screen-ish" units
+
+// base track
+svg.appendChild(el("polyline", {points: P.map((p,i) => xs[i]+","+ys[i]).join(" ") + " " + xs[0]+","+ys[0],
+  fill: "none", stroke: "var(--line)", "stroke-width": 16*scale, "stroke-linejoin": "round", "stroke-linecap": "round"}));
+
+const tip = document.getElementById("tip");
+const segEls = [];
+function show(i) {
+  const s = D.segments[i];
+  const g = s.gain_ms;
+  const what = Math.abs(g) < 10 ? "about level" : (g > 0 ? `pole lap ${(g/1000).toFixed(3)} s quicker` : `lap 2 ${(-g/1000).toFixed(3)} s quicker`);
+  tip.innerHTML = `<b>${s.from_m}–${s.to_m} m</b> · ${what} · min speed pole ${s.lap_min_kmh} km/h vs lap 2 ${s.ref_min_kmh} km/h`;
+  segEls.forEach((e, j) => e.setAttribute("stroke-width", (j === i ? 1.6 : 1) * +e.dataset.w));
+  document.querySelectorAll("tr[data-i]").forEach(r => r.classList.toggle("on", +r.dataset.i === i));
+}
+D.segments.forEach((s, i) => {
+  const pts = [];
+  for (let k = 0; k < P.length; k++) {
+    if (P[k][0] >= s.from_m && P[k][0] < s.to_m) pts.push(k);
+  }
+  if (!pts.length) return;
+  const last = pts[pts.length-1];
+  if (last + 1 < P.length) pts.push(last + 1); else pts.push(0);
+  const g = s.gain_ms, mag = Math.min(Math.abs(g), 200) / 200;
+  const color = Math.abs(g) < 10 ? "var(--flat)" : (g > 0 ? "var(--gain)" : "var(--loss)");
+  const w = (5 + 9*mag) * scale;
+  const line = el("polyline", {points: pts.map(k => xs[k]+","+ys[k]).join(" "), fill: "none", stroke: color,
+    "stroke-width": w, "stroke-linecap": "round", "stroke-linejoin": "round", class: "seg", tabindex: 0});
+  line.dataset.w = w;
+  line.addEventListener("mouseenter", () => show(i));
+  line.addEventListener("click", () => show(i));
+  line.addEventListener("focus", () => show(i));
+  svg.appendChild(line);
+  segEls[i] = line;
+});
+// distance markers every 1000 m, and the start/finish line
+for (let m = 0; m < D.track_length; m += 1000) {
+  let k = P.findIndex(p => p[0] >= m); if (k < 0) continue;
+  const x = xs[k], y = ys[k];
+  svg.appendChild(el("circle", {cx: x, cy: y, r: 6*scale, fill: m === 0 ? "var(--fg)" : "var(--panel)", stroke: "var(--fg)", "stroke-width": 2*scale}));
+  const t = el("text", {x: x + 14*scale, y: y - 12*scale, class: "km", "font-size": 22*scale});
+  t.textContent = m === 0 ? "Start / finish" : m + " m";
+  svg.appendChild(t);
+}
+
+function table(id, rows) {
+  const t = document.getElementById(id);
+  t.innerHTML = "<tr><th>Section</th><th class='n'>Time</th><th class='n'>Min speed pole / lap 2</th></tr>" +
+    rows.map(({s, i}) => `<tr data-i="${i}"><td>${s.from_m}–${s.to_m} m</td><td class="n ${s.gain_ms > 0 ? "gain" : "loss"}">${s.gain_ms > 0 ? "+" : "−"}${(Math.abs(s.gain_ms)/1000).toFixed(3)} s</td><td class="n">${s.lap_min_kmh} / ${s.ref_min_kmh} km/h</td></tr>`).join("");
+  t.querySelectorAll("tr[data-i]").forEach(r => r.addEventListener("click", () => show(+r.dataset.i)));
+}
+const idx = D.segments.map((s, i) => ({s, i}));
+table("gains", idx.filter(o => o.s.gain_ms >= 10).sort((a, b) => b.s.gain_ms - a.s.gain_ms).slice(0, 8));
+table("losses", idx.filter(o => o.s.gain_ms <= -10).sort((a, b) => a.s.gain_ms - b.s.gain_ms).slice(0, 8));
+</script>
