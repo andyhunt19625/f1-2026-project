@@ -21,28 +21,102 @@ from pathlib import Path
 from .ask import fetch
 
 SERVICE = "f1-esports-capture.service"
-ROOT = Path(__file__).resolve().parent.parent          # ~/esports/engineer
+ROOT = Path(__file__).resolve().parent.parent          # .../esports/engineer (or D:\RealF1-esports\engineer)
 RUN_DIR = ROOT / "run"
 PIDFILE = RUN_DIR / "engineer.pid"
 LOGFILE = RUN_DIR / "engineer.log"
-SESSIONS_DIR = ROOT.parent / "sessions"                # ~/esports/sessions
+SESSIONS_DIR = ROOT.parent / "sessions"                # .../sessions next to the engineer folder
 ACTIVE_WITHIN_S = 20                                   # a session written this recently is live
+IS_WINDOWS = os.name == "nt"
+# Windows (the gaming PC): capture runs as an ordinary background process, no service.
+CAPTURE_DIR = ROOT.parent / "capture"
+CAPTURE_PID = RUN_DIR / "capture.pid"
+CAPTURE_OUT = RUN_DIR / "capture.out"
+STOP_FILE = CAPTURE_DIR / "STOP"                       # udp_capture.py (PC copy) exits cleanly when this exists
+WIN_DETACHED = 0x00000008 | 0x00000200                  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+WIN_BREAKAWAY = 0x01000000                              # CREATE_BREAKAWAY_FROM_JOB
 
 
 def _run(cmd):
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
+def _win_cmdline(pid, runner=_run):
+    """Command line of a Windows process, or '' if it is not running."""
+    r = runner(["powershell", "-NoProfile", "-Command",
+                f"(Get-CimInstance Win32_Process -Filter 'ProcessId={int(pid)}').CommandLine"])
+    return (r.stdout or "").strip()
+
+
+def _pid_running(pidfile, marker, runner=_run):
+    """PID from pidfile if that process is alive and its command line contains marker."""
+    try:
+        pid = int(Path(pidfile).read_text().strip())
+    except (OSError, ValueError):
+        return None
+    try:
+        if IS_WINDOWS:
+            cmd = _win_cmdline(pid, runner)
+        else:
+            cmd = Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace")
+    except OSError:
+        cmd = ""
+    if marker in cmd:
+        return pid
+    try:
+        Path(pidfile).unlink()
+    except OSError:
+        pass
+    return None
+
+
+def _spawn(args, cwd, out_path):
+    """Start a background process that outlives the command that started it."""
+    RUN_DIR.mkdir(exist_ok=True)
+    out = open(out_path, "ab")
+    if not IS_WINDOWS:
+        return subprocess.Popen(args, cwd=str(cwd), stdout=out, stderr=subprocess.STDOUT,
+                                start_new_session=True)
+    try:
+        return subprocess.Popen(args, cwd=str(cwd), stdout=out, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, creationflags=WIN_DETACHED | WIN_BREAKAWAY)
+    except OSError:   # breakaway not allowed by the parent job: start without it
+        return subprocess.Popen(args, cwd=str(cwd), stdout=out, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, creationflags=WIN_DETACHED)
+
+
 def capture_state(runner=_run):
+    if IS_WINDOWS:
+        return "active" if _pid_running(CAPTURE_PID, "udp_capture.py", runner) else "inactive"
     return runner(["systemctl", "is-active", SERVICE]).stdout.strip()
 
 
 def start_capture(runner=_run):
+    if IS_WINDOWS:
+        if not (CAPTURE_DIR / "udp_capture.py").is_file():
+            return False, f"{CAPTURE_DIR / 'udp_capture.py'} not found"
+        try:
+            STOP_FILE.unlink()
+        except OSError:
+            pass
+        proc = _spawn([sys.executable, str(CAPTURE_DIR / "udp_capture.py")], CAPTURE_DIR, CAPTURE_OUT)
+        CAPTURE_PID.write_text(str(proc.pid))
+        return True, ""
     r = runner(["sudo", "-n", "systemctl", "start", SERVICE])
     return r.returncode == 0, (r.stderr or r.stdout).strip()
 
 
 def stop_capture(runner=_run):
+    if IS_WINDOWS:
+        # Ask it to stop cleanly (closes the session and flushes files). Never killed here.
+        STOP_FILE.write_text("stop\n")
+        if wait_for(lambda: _pid_running(CAPTURE_PID, "udp_capture.py", runner) is None, 10):
+            try:
+                STOP_FILE.unlink()
+            except OSError:
+                pass
+            return True, ""
+        return False, "capture did not exit within 10 s after the stop file was written"
     r = runner(["sudo", "-n", "systemctl", "stop", SERVICE])
     return r.returncode == 0, (r.stderr or r.stdout).strip()
 
@@ -64,20 +138,9 @@ def session_in_progress(sessions_dir=SESSIONS_DIR, now=None):
     return False
 
 
-def engineer_pid():
+def engineer_pid(runner=_run):
     """PID of the running engineer program, or None. Clears a stale pid file."""
-    try:
-        pid = int(PIDFILE.read_text().strip())
-        cmd = Path(f"/proc/{pid}/cmdline").read_bytes().decode(errors="replace")
-        if "race_engineer.server" in cmd:
-            return pid
-    except (OSError, ValueError):
-        pass
-    try:
-        PIDFILE.unlink()
-    except OSError:
-        pass
-    return None
+    return _pid_running(PIDFILE, "race_engineer.server", runner)
 
 
 def wait_for(cond, seconds):
@@ -90,11 +153,7 @@ def wait_for(cond, seconds):
 
 
 def start_engineer(extra_args):
-    RUN_DIR.mkdir(exist_ok=True)
-    log = open(LOGFILE, "ab")
-    proc = subprocess.Popen([sys.executable, "-m", "race_engineer.server", *extra_args],
-                            cwd=str(ROOT), stdout=log, stderr=subprocess.STDOUT,
-                            start_new_session=True)
+    proc = _spawn([sys.executable, "-m", "race_engineer.server", *extra_args], ROOT, LOGFILE)
     PIDFILE.write_text(str(proc.pid))
     return proc.pid
 
@@ -168,16 +227,11 @@ def cmd_off(args):
               f"{ACTIVE_WITHIN_S} seconds, so a race may be in progress. Not stopping. "
               "Run 'off --force' only if you are sure.")
         return 1
-    pid = engineer_pid()
-    if pid:
-        os.kill(pid, signal.SIGTERM)
-        if wait_for(lambda: engineer_pid() is None, 6):
-            print("Engineer: stopped.")
-        else:
-            print(f"Engineer (pid {pid}) did not stop in time. Capture left running.")
-            return 1
-    else:
-        print("Engineer: was not running.")
+    ok, msg = stop_engineer()
+    print(msg)
+    if not ok:
+        print("Capture left running.")
+        return 1
     if capture_state() == "active":
         ok, msg = stop_capture()
         if not ok or not wait_for(lambda: capture_state() != "active", 8):
@@ -190,14 +244,18 @@ def cmd_off(args):
     return 0
 
 
-def listening(ports=(20777, 20778), runner=_run):
-    """Which of the given UDP ports have a listener (from `ss -ulnH`, no sudo)."""
+def listening(ports=(20777, 20778), runner=_run, windows=None):
+    """Which of the given UDP ports have a listener: `ss -ulnH` on Linux, `netstat -ano -p UDP`
+    on Windows (no admin needed for either)."""
+    windows = IS_WINDOWS if windows is None else windows
     try:
-        out = runner(["ss", "-ulnH"]).stdout
+        out = runner(["netstat", "-ano", "-p", "UDP"] if windows else ["ss", "-ulnH"]).stdout
     except OSError:
         return {p: None for p in ports}
-    return {p: any(line.split()[3].endswith(f":{p}") for line in out.splitlines()
-                   if len(line.split()) > 3) for p in ports}
+    col = 1 if windows else 3      # local address column
+    return {p: any(line.split()[col].endswith(f":{p}") for line in out.splitlines()
+                   if len(line.split()) > col and (not windows or line.split()[0] == "UDP"))
+            for p in ports}
 
 
 def cmd_status(args):
@@ -205,7 +263,7 @@ def cmd_status(args):
     pid = engineer_pid()
     print(f"Engineer: {'running (pid %d)' % pid if pid else 'not running'}")
     ports = listening()
-    word = {True: "yes", False: "no", None: "unknown (ss not available)"}
+    word = {True: "yes", False: "no", None: "unknown (port check not available)"}
     print(f"Listening: capture port 20777 {word[ports[20777]]}, engineer port 20778 {word[ports[20778]]}")
     if pid:
         code, data = fetch("/status")

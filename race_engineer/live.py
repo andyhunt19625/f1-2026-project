@@ -14,7 +14,9 @@ from .state import WANTED, LiveState
 
 FORWARD_HOST = "127.0.0.1"
 FORWARD_PORT = 20778
-DEFAULT_PARSER = os.path.expanduser("~/esports/capture/parser.py")
+# capture/ sits next to engineer/ (~/esports on the server, D:\RealF1-esports on the PC)
+DEFAULT_PARSER = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                              "capture", "parser.py")
 
 
 def load_parser(path=DEFAULT_PARSER):

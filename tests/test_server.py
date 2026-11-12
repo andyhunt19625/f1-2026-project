@@ -129,6 +129,37 @@ class ControlTests(unittest.TestCase):
         ports = control.listening(runner=lambda cmd: R())
         self.assertEqual(ports, {20777: True, 20778: False})
 
+    def test_listening_parses_windows_netstat(self):
+        class R:
+            stdout = ("\nActive Connections\n\n  Proto  Local Address          Foreign Address        State           PID\n"
+                      "  UDP    127.0.0.1:20777        *:*                                    4412\n"
+                      "  UDP    0.0.0.0:5353           *:*                                    2100\n")
+        ports = control.listening(runner=lambda cmd: R(), windows=True)
+        self.assertEqual(ports, {20777: True, 20778: False})
+
+    def test_pid_running_checks_marker_and_clears_stale_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            pf = Path(d) / "x.pid"
+            pf.write_text(str(os.getpid()))
+            # this test process is python running unittest, so the marker is found on Linux
+            if not control.IS_WINDOWS:
+                self.assertEqual(control._pid_running(pf, "python"), os.getpid())
+                self.assertIsNone(control._pid_running(pf, "no-such-marker"))
+                self.assertFalse(pf.exists())   # stale pid file removed
+
+    def test_save_without_drive_keeps_archive_only(self):
+        from race_engineer import archive
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            s = root / "sessions" / "20261112T162447Z_abc"
+            s.mkdir(parents=True)
+            (s / "raw.bin").write_bytes(b"x" * 100)
+            old = time.time() - 600
+            os.utime(s / "raw.bin", (old, old))
+            res = archive.save([s.name], "t", root / "sessions", root / "archive", None, log=lambda *_: None)
+            self.assertIsNone(res["drive_archive"])
+            self.assertTrue(Path(res["archive"]).is_file())
+
     def test_capture_commands_are_exactly_the_sudoers_ones(self):
         seen = []
 

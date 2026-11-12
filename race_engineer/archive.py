@@ -13,6 +13,7 @@ copied to <drive>/archive/. With --copy-folders the folders are also copied to
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import sys
@@ -20,10 +21,12 @@ import tarfile
 import time
 from pathlib import Path
 
-ESPORTS = Path.home() / "esports"
+ESPORTS = Path(__file__).resolve().parent.parent.parent   # folder holding engineer/, sessions/, archive/
 SESSIONS = ESPORTS / "sessions"
 ARCHIVE = ESPORTS / "archive"
-DRIVE = Path("/mnt/fbi-esports")
+# Where copies go. On the server: the PC's drive shared at /mnt/fbi-esports. On the PC the
+# project already lives on that drive, so there is nothing to copy to (None).
+DRIVE = None if os.name == "nt" else Path(os.environ.get("F1_ESPORTS_DRIVE", "/mnt/fbi-esports"))
 ACTIVE_WITHIN_S = 20
 NAME_RE = re.compile(r"^[a-z0-9_]+$")
 
@@ -75,7 +78,7 @@ def save(folders, name, sessions=SESSIONS, archive=ARCHIVE, drive=DRIVE, copy_fo
         if recently_written(p):
             raise SystemExit(f"{p.name} was written in the last {ACTIVE_WITHIN_S} s; it may still be "
                              f"recording. Stop capture first.")
-    if not Path(drive).is_dir():
+    if drive is not None and not Path(drive).is_dir():
         raise SystemExit(f"The external drive is not available at {drive}.")
     date = min(p.name[:8] for p in paths)
     Path(archive).mkdir(parents=True, exist_ok=True)
@@ -95,6 +98,11 @@ def save(folders, name, sessions=SESSIONS, archive=ARCHIVE, drive=DRIVE, copy_fo
                          f"Kept {out} for inspection; nothing else was changed.")
     digest = sha256(out)
     log(f"Archive reads back: {len(got)} files, {out.stat().st_size / 1e9:.2f} GB, sha256 {digest[:16]}...")
+    if drive is None:
+        log("The project already lives on the external drive, so no extra copy is needed. "
+            "Nothing was deleted.")
+        return {"archive": str(out), "drive_archive": None, "sha256": digest, "files": len(got),
+                "drive_folders": []}
 
     dest_dir = Path(drive) / "archive"
     dest_dir.mkdir(exist_ok=True)
