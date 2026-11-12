@@ -169,7 +169,13 @@ def weather_change(state):
         if not s or not s.get("weatherForecastSamples"):
             raise ToolError("No weather forecast yet.")
         cur = s["weather"]
-        samples = s["weatherForecastSamples"]
+        # The Session packet can carry forecasts for other session types too (seen on
+        # 2026-11-12: this session type 15, extra samples tagged type 16). Use only this
+        # session's own samples.
+        st = s.get("sessionType")
+        samples = [x for x in s["weatherForecastSamples"] if st is None or x.get("sessionType", st) == st]
+        if not samples:
+            raise ToolError("No weather forecast for this session yet.")
         peak = max(samples, key=lambda x: x["rainPercentage"])
         change = next((x for x in samples if x["weather"] != cur), None)
         notes = ["timeOffset is assumed to be minutes from now (spec), not yet confirmed.",

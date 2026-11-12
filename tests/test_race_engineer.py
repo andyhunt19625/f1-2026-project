@@ -120,6 +120,18 @@ class Tests(unittest.TestCase):
         self.assertEqual(r["peak_rain_pct"], 90)
         self.assertIn("in about 10 minutes", r["answer"])
 
+    def test_weather_ignores_other_session_type(self):
+        # Shape seen on 2026-11-12: session type 15 plus extra samples tagged type 16
+        pkt = self._session(3, [(0, 3, 70), (5, 3, 70), (10, 3, 71), (0, 5, 90), (5, 5, 91), (10, 5, 92)])
+        pkt["sessionType"] = 15
+        for i, x in enumerate(pkt["weatherForecastSamples"]):
+            x["sessionType"] = 15 if i < 3 else 16
+        self.s.ingest(pkt)
+        r = weather_change(self.s)
+        self.assertIsNone(r["change_at_minutes"])
+        self.assertEqual(r["peak_rain_pct"], 71)
+        self.assertEqual(len(r["forecast"]), 3)
+
     def test_weather_no_data(self):
         with self.assertRaises(ToolError):
             weather_change(self.s)
