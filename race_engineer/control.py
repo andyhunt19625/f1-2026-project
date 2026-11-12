@@ -125,7 +125,11 @@ def cmd_on(args):
             extra += ["--buffer", str(args.buffer)]
         pid = start_engineer(extra)
         if not wait_for(lambda: fetch("/status")[0] == 200, 8):
-            print(f"Engineer did not come up (pid {pid}). Log:\n{log_tail()}")
+            tail = log_tail()
+            if "Address already in use" in tail:
+                print("Engineer did not start: its port is already taken. Is a "
+                      "'race_engineer.cli --live' console still open? Type 'quit' in it, then turn on again.")
+            print(f"Engineer did not come up (pid {pid}). Log:\n{tail}")
             return 1
         print(f"Engineer: started (pid {pid}).")
     return cmd_status(args)
