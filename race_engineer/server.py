@@ -21,7 +21,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from .live import DEFAULT_PARSER, LiveFeed, load_parser
+from .live import DEFAULT_PARSER, FORWARD_PORT, LiveFeed, load_parser
 from .state import LiveState
 from .tools import (DEFAULT_BUFFER_S, ToolError, damage_status, gap_to, pit_window, tyre_field,
                     tyre_status, weather_change)
@@ -124,10 +124,14 @@ def main(argv=None):
     ap.add_argument("--pit-loss", type=float, default=None)
     ap.add_argument("--buffer", type=float, default=DEFAULT_BUFFER_S)
     ap.add_argument("--parser", default=DEFAULT_PARSER)
+    ap.add_argument("--feed-port", type=int, default=FORWARD_PORT,
+                    help="UDP port for the live feed (the simulator uses a different one)")
+    ap.add_argument("--lap-log", default=None, help="where lap reports are appended (default run/live_laps.txt)")
     a = ap.parse_args(argv)
 
-    state = LiveState()
-    feed = LiveFeed(state, load_parser(a.parser)).start()
+    from pathlib import Path
+    state = LiveState(lap_log=Path(a.lap_log) if a.lap_log else None)
+    feed = LiveFeed(state, load_parser(a.parser), port=a.feed_port).start()
     httpd = make_server(state, feed, a.host, a.port, {"pit_loss": a.pit_loss, "buffer": a.buffer})
     stop = threading.Event()
 

@@ -16,7 +16,9 @@ Only reads from the engineer (HTTP GET on 127.0.0.1). Writes one JSONL log in ru
 """
 import argparse
 import json
+import random
 import statistics
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,14 +45,16 @@ class Drill:
         self.prev = None
         self.turn = 0
         self.pending_lap = None   # (lap number, wall time seen, report count then)
+        self.lock = threading.Lock()
         self.last_weather_alert = None
         self.last_dry_count = None
 
     def _log(self, rec):
         rec["wall"] = round(self.clock(), 3)
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec) + "\n")
+        with self.lock:
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec) + "\n")
 
     def _ask(self, tool, **q):
         path = "/ask?" + urlencode(dict(tool=tool, **q))
@@ -110,6 +114,23 @@ class Drill:
             self._ask("reminders")
         self.turn += 1
 
+
+    def hammer(self, stop, drivers=()):
+        """Ask random questions back to back until stop is set (load test)."""
+        tools = ["status", "gap_to", "tyre_status", "damage_status", "pit_window", "weather_change",
+                 "tyre_field", "last_lap", "laps", "ai_deploy", "reminders"]
+        while not stop.is_set():
+            t = random.choice(tools)
+            if t == "status":
+                code, st, ms = _get("/status", self.host, self.port)
+                self._log({"kind": "ask", "tool": "status", "code": code, "ms": ms, "error": st.get("error"),
+                           "load": True})
+                drivers = [n for n in (st.get("drivers") or []) if n != st.get("you")] or drivers
+            elif t == "gap_to":
+                if drivers:
+                    self._ask("gap_to", driver=random.choice(list(drivers)))
+            else:
+                self._ask(t)
 
     def _weather_watch(self, w):
         """Log once per forecast when it shows drier weather within DRYING_SOON_MIN minutes."""
