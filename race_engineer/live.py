@@ -42,7 +42,8 @@ class LiveFeed:
         self.state = state
         self.parser = parser
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # No SO_REUSEADDR on purpose: a second listener on this port would silently split
+        # the packets with the first. Binding twice must fail loudly instead.
         self.sock.bind((host, port))
         self.sock.settimeout(0.5)
         self.port = self.sock.getsockname()[1]
