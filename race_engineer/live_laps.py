@@ -66,6 +66,7 @@ class LiveLaps:
         self.log_path = log_path
         self.playbook = load_playbook() if playbook is None else playbook
         self.session_type = None
+        self.session_time = None
         self.track_id = None
         self.reminded = set()
         self.names, self.n, self.player, self.length = [], 0, None, None
@@ -76,6 +77,8 @@ class LiveLaps:
     # ---- input ----------------------------------------------------------
     def ingest(self, pkt):
         name = pkt.get("packet_name")
+        if pkt.get("sessionTime") is not None:
+            self.session_time = pkt["sessionTime"]
         if name == "Participants":
             n = pkt.get("numActiveCars", len(pkt["participants"]))
             parts = pkt["participants"][:n]
@@ -131,7 +134,7 @@ class LiveLaps:
         label = lap_label(key)
         clean = complete(lap, self.length)
         lines = [f"{label}: {fmt_ms(lap['time_ms'])}" + ("" if clean else " (not counted: invalid, pit or incomplete)")]
-        res = {"lap": label, "time_ms": lap["time_ms"], "clean": clean}
+        res = {"lap": label, "time_ms": lap["time_ms"], "clean": clean, "session_time": self.session_time}
         earlier = {k: l for k, l in laps.items() if k != key and complete(l, self.length)}
         if clean and earlier:
             bk = min(earlier, key=lambda k: earlier[k]["time_ms"])

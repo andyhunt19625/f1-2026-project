@@ -71,11 +71,15 @@ def run_tool(state, q, cfg):
 def status(state, feed):
     with state.lock:
         slot = state.player_slot()
+        me = state.lap_data[slot] if slot is not None and slot < len(state.lap_data) else {}
         return {"ok": True, "ready": state.ready(), "session_time": state.session_time,
                 "packets_in_state": dict(state.counts),
                 "datagrams_received": feed.received if feed else None,
                 "decode_errors": feed.errors if feed else None,
-                "you": state.name_of(slot) if slot is not None and state.participants else None}
+                "you": state.name_of(slot) if slot is not None and state.participants else None,
+                "your_lap": me.get("currentLapNum"), "your_position": me.get("carPosition"),
+                "drivers": [p["name"] for p in state.participants[: state._n()]],
+                "lap_reports": len(state.live_laps.reports)}
 
 
 def make_server(state, feed, host=DEFAULT_HOST, port=DEFAULT_PORT, cfg=None):
