@@ -66,6 +66,7 @@ class LiveLaps:
         self.log_path = log_path
         self.playbook = load_playbook() if playbook is None else playbook
         self.session_type = None
+        self.track_id = None
         self.reminded = set()
         self.names, self.n, self.player, self.length = [], 0, None, None
         self.builders = []
@@ -88,6 +89,8 @@ class LiveLaps:
                 self.length = pkt["trackLength"]
             if pkt.get("sessionType") is not None:
                 self.session_type = pkt["sessionType"]
+            if pkt.get("trackId") is not None:
+                self.track_id = pkt["trackId"]
         elif name in FIELDS:
             fr = pkt.get("frameIdentifier")
             self.pend[name][fr] = pkt[FIELDS[name]]
@@ -169,6 +172,12 @@ class LiveLaps:
             for i, r in enumerate(self.playbook):
                 if group not in r.get("when", []):
                     continue
+                if "track_id" in r and r["track_id"] != self.track_id:
+                    # learned at another track: at most one note per practice session, never a nag
+                    if r.get("elsewhere") == "practice_note" and group == "practice" and i not in self.reminded:
+                        lines.append(f"  NOTE (learned at {r.get('track_name', 'another track')}, may differ here): {r['text']}")
+                        self.reminded.add(i)
+                    continue
                 if r.get("check") == "ers_mode_none":
                     none_pct = modes.get(0, 0)
                     if none_pct < 50:
@@ -214,7 +223,15 @@ class LiveLaps:
 
     def reminders(self):
         group = session_group(self.session_type)
-        items = [r["text"] for r in self.playbook if group in r.get("when", [])]
+        items = []
+        for r in self.playbook:
+            if group not in r.get("when", []):
+                continue
+            if "track_id" in r and r["track_id"] != self.track_id:
+                if r.get("elsewhere") == "practice_note" and group == "practice":
+                    items.append(f"(learned at {r.get('track_name', 'another track')}, may differ here) {r['text']}")
+                continue
+            items.append(r["text"])
         return {"session_group": group, "reminders": items,
                 "answer": "\n".join("REMINDER: " + t for t in items) or f"No reminders for this session ({group})."}
 

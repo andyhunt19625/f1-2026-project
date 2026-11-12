@@ -1,9 +1,12 @@
 {
-  "_about": "Things Andy has learned that the engineer should remind him of. Each entry: when (session group), check (optional), text. Session groups come from Session.sessionType (F1 25 UDP spec): practice 1-4, qualifying 5-14, race 15-17, time_trial 18.",
+  "_about": "Things Andy has learned that the engineer should remind him of. Each entry: when (session group), track_id (optional: only applies at that track; Session.trackId, 0 = Melbourne as seen in the Australia sessions), elsewhere (optional: practice_note = one note per practice session at other tracks), check (optional), text. Session groups come from Session.sessionType (F1 25 UDP spec): practice 1-4, qualifying 5-14, race 15-17, time_trial 18.",
   "reminders": [
     {
       "added": "2026-11-12, Australia qualifying (career)",
       "when": ["qualifying", "practice"],
+      "track_id": 0,
+      "track_name": "Australia (Melbourne)",
+      "elsewhere": "practice_note",
       "check": "ers_mode_none",
       "text": "Pole lap 1:16.749 was done with ERS mode on NONE and deploying by hand where needed (game data: none 70%, overtake 30% of the lap). The laps on hotlap (71%) and medium (82%) were 1.147 s and 0.958 s slower."
     }

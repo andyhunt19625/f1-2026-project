@@ -56,9 +56,10 @@ class LiveLapTests(unittest.TestCase):
 
 
 class ReminderTests(unittest.TestCase):
-    RULE = [{"when": ["qualifying", "practice"], "check": "ers_mode_none", "text": "Use mode none."}]
+    RULE = [{"when": ["qualifying", "practice"], "track_id": 0, "track_name": "Australia",
+             "elsewhere": "practice_note", "check": "ers_mode_none", "text": "Use mode none."}]
 
-    def run_session(self, session_type, mode):
+    def run_session(self, session_type, mode, track_id=0):
         from race_engineer.live_laps import LiveLaps
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "parsed.jsonl")
@@ -69,6 +70,7 @@ class ReminderTests(unittest.TestCase):
                     pkt = json.loads(line)
                     if pkt["packet_name"] == "Session":
                         pkt["sessionType"] = session_type
+                        pkt["trackId"] = track_id
                     for st in pkt.get("carStatusData", []):
                         st["ersDeployMode"] = mode
                     ll.ingest(pkt)
@@ -89,8 +91,22 @@ class ReminderTests(unittest.TestCase):
     def test_no_reminder_in_race_or_mode_line_in_time_trial(self):
         self.assertNotIn("REMINDER", self.run_session(15, 2).reports[1]["text"])
         tt = self.run_session(18, 2)
+        self.assertIsNotNone(tt)
         self.assertNotIn("ERS mode", tt.reports[1]["text"])
         self.assertNotIn("REMINDER", tt.reports[1]["text"])
+
+
+    def test_other_track_qualifying_no_reminder(self):
+        ll = self.run_session(5, 2, track_id=3)
+        for r in ll.reports:
+            self.assertNotIn("REMINDER", r["text"])
+            self.assertNotIn("NOTE", r["text"])
+
+    def test_other_track_practice_one_note_only(self):
+        ll = self.run_session(1, 2, track_id=3)
+        self.assertIn("NOTE (learned at Australia, may differ here): Use mode none.", ll.reports[0]["text"])
+        self.assertNotIn("NOTE", ll.reports[1]["text"])
+        self.assertNotIn("REMINDER", ll.reports[0]["text"])
 
 
 if __name__ == "__main__":
