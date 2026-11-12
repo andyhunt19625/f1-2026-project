@@ -17,20 +17,22 @@ def transitions(path):
                 d = json.loads(line)
             except ValueError:
                 continue
-            fc = [(x["timeOffset"], x["weather"], x["rainPercentage"])
+            fc = [(x.get("sessionType"), x["timeOffset"], x["weather"], x["rainPercentage"])
                   for x in d.get("weatherForecastSamples", [])]
-            key = (d["weather"], tuple(fc))
+            key = (d["weather"], d.get("sessionType"), tuple(fc))
             if key != last:
-                yield d["sessionTime"], d["weather"], d.get("trackTemperature"), fc
+                yield (d["sessionTime"], d["weather"], d.get("trackTemperature"), fc,
+                       d.get("sessionType"))
                 last = key
 
 
 def main(argv=None):
     path = (argv or sys.argv[1:])[0]
     n = 0
-    for st, w, tt, fc in transitions(path):
+    for st, w, tt, fc, stype in transitions(path):
         n += 1
-        print(f"t={st:8.1f}s weather={w} track={tt}C forecast(offset,weather,rain%)={fc}")
+        print(f"t={st:8.1f}s weather={w} track={tt}C sessionType={stype} "
+              f"forecast(sessionType,offset,weather,rain%)={fc}")
     print(f"{n} distinct weather states")
 
 
