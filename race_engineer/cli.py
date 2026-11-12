@@ -11,9 +11,9 @@ import threading
 
 from .replay import replay
 from .state import LiveState
-from .tools import DEFAULT_BUFFER_S, ToolError, gap_to, pit_window, tyre_status
+from .tools import DEFAULT_BUFFER_S, ToolError, gap_to, pit_window, tyre_status, weather_change
 
-HELP = "gap <driver> | tyres [driver] | pit | who | quit"
+HELP = "gap <driver> | tyres [driver] | pit | weather | who | quit"
 
 
 def main(argv=None):
@@ -49,6 +49,8 @@ def main(argv=None):
                 r = tyre_status(state, arg or "me")
             elif cmd == "pit":
                 r = pit_window(state, a.pit_loss, a.buffer)
+            elif cmd == "weather":
+                r = weather_change(state)
             elif cmd == "who":
                 s = state.player_slot()
                 print(f"Your slot: {s}, name: {state.name_of(s) if s is not None else None}")

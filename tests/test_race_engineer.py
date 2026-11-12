@@ -5,7 +5,8 @@ import unittest
 
 from race_engineer.replay import replay
 from race_engineer.state import LiveState
-from race_engineer.tools import ToolError, find_driver, gap_to, pit_window, tyre_status
+from race_engineer.tools import (ToolError, find_driver, gap_to, pit_window, tyre_status,
+                                 weather_change)
 
 NAMES = ["NORRIS", "PIASTRI", "HAMILTON", "PÉREZ"]  # synthetic order; slots differ per session
 
@@ -98,6 +99,41 @@ class Tests(unittest.TestCase):
         self.s.ingest(lapdata([lap(1, 5, 0, 0, 1, 1, 19016)] * 4))
         self.s.ingest(lapdata([lap(1, 5, 0, 0, 1, 0, 0)] * 4))
         self.assertEqual(self.s.pit_lane[0]["completed_ms"], [19016])
+
+    def _session(self, weather, samples, st=0.0):
+        return {"packet_name": "Session", "sessionTime": st, "weather": weather,
+                "weatherForecastSamples": [{"timeOffset": o, "weather": w, "rainPercentage": r}
+                                           for o, w, r in samples]}
+
+    def test_weather_no_change_like_jeddah(self):
+        self.s.ingest(self._session(0, [(0, 0, 2), (5, 0, 2), (10, 0, 2), (15, 0, 2), (30, 0, 3)]))
+        r = weather_change(self.s)
+        self.assertIsNone(r["change_at_minutes"])
+        self.assertEqual(r["peak_rain_pct"], 3)
+        self.assertIn("No change forecast over the next 30 minutes", r["answer"])
+
+    def test_weather_change_to_rain(self):
+        self.s.ingest(self._session(0, [(0, 0, 5), (5, 0, 20), (10, 3, 70), (15, 4, 90)]))
+        r = weather_change(self.s)
+        self.assertEqual(r["change_at_minutes"], 10)
+        self.assertEqual(r["change_to"], 3)
+        self.assertEqual(r["peak_rain_pct"], 90)
+        self.assertIn("in about 10 minutes", r["answer"])
+
+    def test_weather_no_data(self):
+        with self.assertRaises(ToolError):
+            weather_change(self.s)
+
+    def test_weather_log_transitions(self):
+        from race_engineer.weather_log import transitions
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "parsed.jsonl")
+            a = dict(self._session(0, [(0, 0, 2)], 0.0), t=1.0)
+            b = dict(self._session(0, [(0, 0, 2)], 10.0), t=2.0)   # same state: not logged
+            c = dict(self._session(3, [(0, 3, 60)], 20.0), t=3.0)  # changed
+            with open(p, "w") as f:
+                f.write("\n".join(json.dumps(x) for x in (a, b, c)) + "\n")
+            self.assertEqual([t[0] for t in transitions(p)], [0.0, 20.0])
 
     def test_replay_file(self):
         with tempfile.TemporaryDirectory() as d:

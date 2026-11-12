@@ -152,4 +152,45 @@ def pit_window(state, pit_loss_s, buffer_s=DEFAULT_BUFFER_S):
                                "measurement is still to be built."]}
 
 
-TOOLS = {"gap_to": gap_to, "tyre_status": tyre_status, "pit_window": pit_window}
+# Weather codes per the F1 UDP spec. Only code 0 has been seen in a saved session, so the
+# other names are unconfirmed until the wet test.
+WEATHER_NAMES = {0: "clear", 1: "light cloud", 2: "overcast", 3: "light rain",
+                 4: "heavy rain", 5: "storm"}
+
+
+def _wname(code):
+    return WEATHER_NAMES.get(code, f"weather code {code}")
+
+
+def weather_change(state):
+    """First forecast sample whose weather differs from the current weather."""
+    with state.lock:
+        s = state.session
+        if not s or not s.get("weatherForecastSamples"):
+            raise ToolError("No weather forecast yet.")
+        cur = s["weather"]
+        samples = s["weatherForecastSamples"]
+        peak = max(samples, key=lambda x: x["rainPercentage"])
+        change = next((x for x in samples if x["weather"] != cur), None)
+        notes = ["timeOffset is assumed to be minutes from now (spec), not yet confirmed.",
+                 "Weather names other than 'clear' are from the spec, not yet seen in a saved session."]
+        if change:
+            mins = change["timeOffset"]
+            text = (f"The weather is forecast to change from {_wname(cur)} to "
+                    f"{_wname(change['weather'])} in about {mins} minutes, with a "
+                    f"{change['rainPercentage']} percent chance of rain.")
+        else:
+            horizon = samples[-1]["timeOffset"]
+            text = (f"No change forecast over the next {horizon} minutes. Rain chance peaks at "
+                    f"{peak['rainPercentage']} percent.")
+        return {"answer": text, "current_weather": cur, "current_name": _wname(cur),
+                "change_at_minutes": change["timeOffset"] if change else None,
+                "change_to": change["weather"] if change else None,
+                "peak_rain_pct": peak["rainPercentage"], "peak_rain_at_minutes": peak["timeOffset"],
+                "forecast": [{k: x[k] for k in ("timeOffset", "weather", "rainPercentage")}
+                             for x in samples],
+                "unverified": notes}
+
+
+TOOLS = {"gap_to": gap_to, "tyre_status": tyre_status, "pit_window": pit_window,
+         "weather_change": weather_change}
