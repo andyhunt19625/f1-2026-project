@@ -108,6 +108,18 @@ class LiveBindTests(unittest.TestCase):
 
 
 class ControlTests(unittest.TestCase):
+    def test_windows_start_capture_never_runs_in_tests_without_the_script(self):
+        # Safety net: with the Windows path forced and no capture script present, nothing is spawned.
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d, \
+             mock.patch.object(control, "IS_WINDOWS", True), \
+             mock.patch.object(control, "CAPTURE_DIR", Path(d)), \
+             mock.patch.object(control, "_spawn") as spawn:
+            ok, msg = control.start_capture()
+            self.assertFalse(ok)
+            self.assertIn("not found", msg)
+            spawn.assert_not_called()
+
     def test_session_in_progress_detects_recent_writes(self):
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / "20261112T150000Z_abc"
@@ -126,7 +138,7 @@ class ControlTests(unittest.TestCase):
         class R:
             stdout = ("UNCONN 0      0            0.0.0.0:20777      0.0.0.0:*\n"
                       "UNCONN 0      0            0.0.0.0:5353       0.0.0.0:*\n")
-        ports = control.listening(runner=lambda cmd: R())
+        ports = control.listening(runner=lambda cmd: R(), windows=False)
         self.assertEqual(ports, {20777: True, 20778: False})
 
     def test_listening_parses_windows_netstat(self):
@@ -161,6 +173,12 @@ class ControlTests(unittest.TestCase):
             self.assertTrue(Path(res["archive"]).is_file())
 
     def test_capture_commands_are_exactly_the_sudoers_ones(self):
+        # Linux (server) path only. Force it, so on Windows this test can never start a real
+        # capture process (it did once on the PC before this guard).
+        from unittest import mock
+        patcher = mock.patch.object(control, "IS_WINDOWS", False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         seen = []
 
         def fake(cmd):
