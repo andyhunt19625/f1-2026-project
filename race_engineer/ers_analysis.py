@@ -34,14 +34,20 @@ class ErsLapBuilder(LapBuilder):
     """LapBuilder that also keeps, per sample, (dist, t_ms, store_J, mguk_W, deploy_mode)
     and the lap's last deployed / harvested totals."""
 
-    def add_with_status(self, ld, tel, st):
+    def add_with_status(self, ld, tel, st, wear=None):
+        """Also keeps, per sample, fuel in the tank (index 5 of each ers tuple) and, about every 20 m, the four tyres'
+        wear (lap["wear_s"]), so reports can show where fuel and tyres are used up along the lap."""
         self.add(ld, tel)
         if ld["lapDistance"] < 0:
             return
         lap = self.laps[self.prev_key]
         lap.setdefault("ers", []).append((ld["lapDistance"], ld["currentLapTimeInMS"],
                                           st.get("ersStoreEnergy"), st.get("enginePowerMGUK"),
-                                          st.get("ersDeployMode")))
+                                          st.get("ersDeployMode"), st.get("fuelInTank")))
+        if wear:
+            ws = lap.setdefault("wear_s", [])
+            if not ws or ld["lapDistance"] - ws[-1][0] >= 20 or ld["lapDistance"] < ws[-1][0]:
+                ws.append((ld["lapDistance"], tuple(wear)))
         lap["deployed_J"] = st.get("ersDeployedThisLap")
         lap["harvested_J"] = (st.get("ersHarvestedThisLapMGUK") or 0) + (st.get("ersHarvestedThisLapMGUH") or 0)
         lap["harvest_limit_J"] = st.get("ersHarvestLimitPerLap")

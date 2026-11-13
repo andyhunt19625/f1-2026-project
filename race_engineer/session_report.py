@@ -13,7 +13,7 @@ import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import compare, ers_analysis as ers, events as ev, pace_model
+from . import compare, ers_analysis as ers, events as ev, pace_model, report_layers
 from .lap_analysis import compare as seg_compare, complete, fmt_ms
 from .session_digest import as_compare_data, load
 from .session_reader import lap_label
@@ -164,6 +164,9 @@ def build_report(folder, digest):
         if best_ai:
             _, a = _best(digest["laps"][ai_slot], length, need_active=True)
             res["battery_ai"] = ers.lap_summary(a) if a else None
+    if best_ai:
+        ai_act = _best(digest["laps"][ai_slot], length, need_active=True)[1] if m["session_type"] != 18 else None
+        res["layers"] = report_layers.build(my_l, ai_l, ai_act, cmp["versus"][0]["corners"] if cmp.get("versus") else [], length)
     fuel = []
     for k in sorted(digest["laps"][me]):
         l = digest["laps"][me][k]

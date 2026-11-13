@@ -35,10 +35,10 @@ def tyre_snap(damage, st, lap):
 
 
 class _Builder(ErsLapBuilder):
-    def add_all(self, ld, tel, st, mo, keep_pos):
+    def add_all(self, ld, tel, st, mo, keep_pos, wear=None):
         """Returns the key of a lap that has just been given its time (as live_laps does), else None."""
         before = self.prev_key
-        self.add_with_status(ld, tel, st)
+        self.add_with_status(ld, tel, st, wear)
         if ld["lapDistance"] < 0:
             return None
         lap = self.laps[self.prev_key]
@@ -110,8 +110,9 @@ def build(path):
                         my_lap = lap[meta["player"]]["currentLapNum"]
                     for slot in range(min(meta["n"], len(lap), len(tel), len(st))):
                         first = builders[slot].prev_key is None
+                        wear = damage[slot].get("tyresWear") if damage and slot < len(damage) else None
                         done = builders[slot].add_all(lap[slot], tel[slot], st[slot],
-                                                      mo[slot] if slot < len(mo) else None, slot == meta["player"])
+                                                      mo[slot] if slot < len(mo) else None, slot == meta["player"], wear)
                         if damage and slot < len(damage) and (done is not None or first):
                             tyre_log.setdefault(slot, []).append(tyre_snap(damage[slot], st[slot], 0 if first else done[1]))
                 if len(pend[kind]) > WINDOW:

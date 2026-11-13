@@ -54,12 +54,12 @@ WINDOW = 64
 
 
 class _Builder(ers.ErsLapBuilder):
-    def feed(self, ld, tel, st, pos=None):
+    def feed(self, ld, tel, st, pos=None, wear=None):
         """Add one sample; return the key of a lap that has just been given its time, or None.
         Also keeps fuel at lap start and, when pos=(x, z) is given, the car's track position,
         exactly as session_digest does, so the live digest can replace a full file read."""
         before = self.prev_key
-        self.add_with_status(ld, tel, st)
+        self.add_with_status(ld, tel, st, wear)
         if ld["lapDistance"] >= 0 and self.prev_key in self.laps:
             lap = self.laps[self.prev_key]
             if self.prev_key != before or "fuel_start" not in lap:
@@ -161,7 +161,8 @@ class LiveLaps:
             if slot == self.player and self.motion and slot < len(self.motion):
                 pos = (self.motion[slot].get("worldPositionX"), self.motion[slot].get("worldPositionZ"))
             first = self.builders[slot].prev_key is None
-            done = self.builders[slot].feed(lap[slot], tel[slot], st[slot], pos)
+            wear = self.damage[slot].get("tyresWear") if self.damage and slot < len(self.damage) else None
+            done = self.builders[slot].feed(lap[slot], tel[slot], st[slot], pos, wear)
             if self.damage and slot < len(self.damage) and (done is not None or first):
                 from .session_digest import tyre_snap
                 self.tyre_log.setdefault(slot, []).append(tyre_snap(self.damage[slot], st[slot], 0 if first else done[1]))

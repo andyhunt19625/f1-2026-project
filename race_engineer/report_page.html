@@ -6,17 +6,17 @@
 /* Layout: one column; summary line, then the track map as the hero, then the gain/loss table. */
 :root{
   --bg:#f3f5f7; --panel:#ffffff; --fg:#14181d; --muted:#5d6874; --line:#d5dbe1;
-  --gain:#0f9d58; --loss:#d93025; --flat:#9aa5b1; --accent:#1f5fbf;
+  --gain:#0f9d58; --loss:#d93025; --flat:#9aa5b1; --accent:#1f5fbf; --you:#e07b00; --ai:#2f7fd0;
   --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
   --body:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0e1216; --panel:#161b21; --fg:#e8edf2; --muted:#94a0ad; --line:#2a323b;
-  --gain:#34c77b; --loss:#ff5f52; --flat:#5f6b77; --accent:#6aa3ff; color-scheme:dark}}
+  --gain:#34c77b; --loss:#ff5f52; --flat:#5f6b77; --accent:#6aa3ff; --you:#ffa033; --ai:#5aa7ff; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0e1216; --panel:#161b21; --fg:#e8edf2; --muted:#94a0ad; --line:#2a323b;
-  --gain:#34c77b; --loss:#ff5f52; --flat:#5f6b77; --accent:#6aa3ff; color-scheme:dark}
+  --gain:#34c77b; --loss:#ff5f52; --flat:#5f6b77; --accent:#6aa3ff; --you:#ffa033; --ai:#5aa7ff; color-scheme:dark}
 body{background:var(--bg);color:var(--fg);font-family:var(--body);line-height:1.5;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
 .wrap{max-width:980px;margin:0 auto;display:grid;gap:20px}
@@ -65,19 +65,13 @@ section.block{display:grid;gap:8px}
     <div class="times" id="times"></div>
   </header>
   <div class="map" id="mapbox">
-    <div class="legend" id="modes" hidden>
-      <span>Map shows:</span>
-      <button type="button" id="m-ai" class="mode on">You vs the best AI</button>
-      <button type="button" id="m-prev" class="mode">You vs your previous session</button>
-    </div>
+    <div class="legend" id="modes"><label for="layer">Show on the map:</label>
+      <select id="layer" class="mode"></select></div>
     <svg id="map" role="img" aria-label="Track map coloured by time gained or lost against the best AI lap in each 100 metres"></svg>
-    <div class="legend">
-      <span><span class="sw" style="background:var(--gain)"></span>You quicker than the AI</span>
-      <span><span class="sw" style="background:var(--loss)"></span>You slower than the AI</span>
-      <span><span class="sw" style="background:var(--flat)"></span>Within 0.010 s</span>
-      <span>Thicker = bigger difference</span>
-    </div>
+    <div class="legend" id="legend"></div>
     <div class="tip" id="tip">Tap or hover a section of track for its numbers.</div>
+    <p class="note" id="layernote"></p>
+    <div class="cols"><div class="tbl"><table id="layerA"></table></div><div class="tbl"><table id="layerB"></table></div></div>
   </div>
   <div class="cols">
     <section class="block"><h2>By type of track</h2><div class="tbl"><table id="types"></table></div></section>
@@ -131,47 +125,112 @@ else {
 // ---- map
 const P = D.points || [];
 const SP = D.since_previous && !D.since_previous.error ? D.since_previous : null;
-const MODES = {ai: {segs: D.segments || [], a: "you", b: "AI", ak: "you_min_kmh", bk: "ai_min_kmh",
-                    good: "You quicker than the AI", bad: "You slower than the AI"},
-               prev: SP ? {segs: SP.segments, a: "now", b: SP.previous, ak: "now_min_kmh", bk: "then_min_kmh",
-                           good: `Quicker than in ${SP.previous}`, bad: `Slower than in ${SP.previous}`} : null};
-function drawMap(mode) {
-const M = MODES[mode], S = M.segs;
-const svg = document.getElementById("map"); svg.innerHTML = "";
-const lg = document.querySelectorAll("#mapbox > .legend")[1].children;
-lg[0].lastChild.textContent = M.good; lg[1].lastChild.textContent = M.bad;
-if (P.length > 10 && S.length) {
+const LY = D.layers || {};
+const NS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById("map"), tip = document.getElementById("tip"), legend = document.getElementById("legend");
+const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const sw = (c, t) => `<span><span class="sw" style="background:${c}"></span>${t}</span>`;
+let GEO = null, OVERLAY = null;
+function geometry() {
   let area = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i+1)%P.length]; area += a[1]*b[2] - b[1]*a[2]; }
   const sx = area < 0 ? -1 : 1, xs = P.map(p => sx*p[1]), ys = P.map(p => p[2]);
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-  const pad = 110, W = maxX-minX, H = maxY-minY, NS = "http://www.w3.org/2000/svg";
-  svg.setAttribute("viewBox", `${minX-pad} ${minY-pad} ${W+2*pad} ${H+2*pad}`);
-  const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
-  const scale = Math.max(W, H) / 600;
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys), pad = 110;
+  return {xs, ys, scale: Math.max(maxX-minX, maxY-minY) / 600, box: `${minX-pad} ${minY-pad} ${maxX-minX+2*pad} ${maxY-minY+2*pad}`,
+    at: d => { let k = P.findIndex(p => p[0] >= d); if (k < 0) k = P.length - 1; return [xs[k], ys[k]]; }};
+}
+function baseMap() {
+  svg.innerHTML = ""; svg.setAttribute("viewBox", GEO.box); const {xs, ys, scale} = GEO;
   svg.appendChild(el("polyline", {points: P.map((p,i) => xs[i]+","+ys[i]).join(" ") + " " + xs[0]+","+ys[0], fill: "none", stroke: "var(--line)", "stroke-width": 16*scale, "stroke-linejoin": "round", "stroke-linecap": "round"}));
-  const tip = document.getElementById("tip"), segEls = [];
-  const show = i => { const s = S[i], g = s.gain_ms;
-    const what = Math.abs(g) < 10 ? "about level" : (g > 0 ? `${M.a} ${(g/1000).toFixed(3)} s quicker` : `${M.b} ${(-g/1000).toFixed(3)} s quicker`);
-    tip.innerHTML = `<b>${s.from_m}–${s.to_m} m</b> · ${what} · min speed ${M.a} ${s[M.ak]} km/h vs ${M.b} ${s[M.bk]} km/h`;
-    segEls.forEach((e, j) => e && e.setAttribute("stroke-width", (j === i ? 1.6 : 1) * +e.dataset.w)); };
-  S.forEach((s, i) => { const pts = []; for (let k = 0; k < P.length; k++) if (P[k][0] >= s.from_m && P[k][0] < s.to_m) pts.push(k);
-    if (!pts.length) return; const last = pts[pts.length-1]; pts.push(last + 1 < P.length ? last + 1 : 0);
-    const g = s.gain_ms, mag = Math.min(Math.abs(g), 200)/200, w = (5 + 9*mag)*scale;
-    const line = el("polyline", {points: pts.map(k => xs[k]+","+ys[k]).join(" "), fill: "none", stroke: Math.abs(g) < 10 ? "var(--flat)" : (g > 0 ? "var(--gain)" : "var(--loss)"), "stroke-width": w, "stroke-linecap": "round", "stroke-linejoin": "round", class: "seg", tabindex: 0});
-    line.dataset.w = w; ["mouseenter","click","focus"].forEach(ev => line.addEventListener(ev, () => show(i))); svg.appendChild(line); segEls[i] = line; });
+}
+function kmMarks() {
+  const {xs, ys, scale} = GEO;
   for (let m = 0; m < D.track_length; m += 1000) { const k = P.findIndex(p => p[0] >= m); if (k < 0) continue;
     svg.appendChild(el("circle", {cx: xs[k], cy: ys[k], r: 6*scale, fill: m === 0 ? "var(--fg)" : "var(--panel)", stroke: "var(--fg)", "stroke-width": 2*scale}));
     const t = el("text", {x: xs[k] + 14*scale, y: ys[k] - 12*scale, class: "km", "font-size": 22*scale}); t.textContent = m === 0 ? "Start / finish" : m + " m"; svg.appendChild(t); }
+}
+function segLine(s, color, w, onShow) {
+  const pts = []; for (let k = 0; k < P.length; k++) if (P[k][0] >= s.from_m && P[k][0] < s.to_m) pts.push(k);
+  if (!pts.length) return null; const last = pts[pts.length-1]; pts.push(last + 1 < P.length ? last + 1 : 0);
+  const line = el("polyline", {points: pts.map(k => GEO.xs[k]+","+GEO.ys[k]).join(" "), fill: "none", stroke: color, "stroke-width": w,
+    "stroke-linecap": "round", "stroke-linejoin": "round", class: "seg", tabindex: 0});
+  line.dataset.w = w; ["mouseenter", "click", "focus"].forEach(ev => line.addEventListener(ev, onShow)); svg.appendChild(line); return line;
+}
+const f1 = v => v == null ? "–" : +v.toFixed(1);
+// --- layers that colour 50 m or 100 m sections
+function drawSections(segs, colorOf, widthOf, text) {
+  const els = [];
+  segs.forEach((s, i) => { const w = widthOf(s) * GEO.scale; const e = segLine(s, colorOf(s), w, () => { tip.innerHTML = text(s);
+    els.forEach((x, j) => x && x.setAttribute("stroke-width", (j === i ? 1.6 : 1) * +x.dataset.w)); }); els[i] = e; });
+}
+function showTime(mode) {
+  const M = mode === "ai" ? {segs: D.segments || [], a: "you", b: "AI", ak: "you_min_kmh", bk: "ai_min_kmh", good: "You quicker than the AI", bad: "You slower than the AI"}
+    : {segs: SP.segments, a: "now", b: SP.previous, ak: "now_min_kmh", bk: "then_min_kmh", good: `Quicker than in ${SP.previous}`, bad: `Slower than in ${SP.previous}`};
+  drawSections(M.segs, s => Math.abs(s.gain_ms) < 10 ? "var(--flat)" : (s.gain_ms > 0 ? "var(--gain)" : "var(--loss)"),
+    s => 5 + 9 * Math.min(Math.abs(s.gain_ms), 200) / 200,
+    s => { const g = s.gain_ms, what = Math.abs(g) < 10 ? "about level" : (g > 0 ? `${M.a} ${(g/1000).toFixed(3)} s quicker` : `${M.b} ${(-g/1000).toFixed(3)} s quicker`);
+      return `<b>${s.from_m}–${s.to_m} m</b> · ${what} · min speed ${M.a} ${s[M.ak]} km/h vs ${M.b} ${s[M.bk]} km/h`; });
+  legend.innerHTML = sw("var(--gain)", M.good) + sw("var(--loss)", M.bad) + sw("var(--flat)", "Within 0.010 s") + "<span>Thicker = bigger difference</span>";
+  document.getElementById("layernote").textContent = ""; document.getElementById("layerA").innerHTML = ""; document.getElementById("layerB").innerHTML = "";
+}
+function showPair(L) {
+  const segs = L.segments, mx = Math.max(...segs.map(s => Math.abs(s.you - s.ai)), 1e-9), bad = L.higher === "bad";
+  const hi = bad ? "var(--loss)" : "var(--you)", lo = bad ? "var(--gain)" : "var(--ai)";
+  drawSections(segs, s => Math.abs(s.you - s.ai) < 0.04 * mx ? "var(--flat)" : (s.you > s.ai ? hi : lo),
+    s => 5 + 9 * Math.min(1, Math.abs(s.you - s.ai) / (0.6 * mx)),
+    s => `<b>${s.from_m}–${s.to_m} m</b> · you ${f1(s.you)} ${L.unit} · AI ${f1(s.ai)} ${L.unit} · difference ${f1(s.you - s.ai)} ${L.unit}`);
+  legend.innerHTML = sw(hi, bad ? "You use more than the AI" : "You use more than the AI") + sw(lo, bad ? "You use less than the AI" : "The AI uses more than you") + sw("var(--flat)", "About level") + "<span>Thicker = bigger difference</span>";
+  document.getElementById("layernote").textContent = L.explain;
+  const d = segs.map(s => ({s, d: s.you - s.ai}));
+  const row = x => [`${x.s.from_m}–${x.s.to_m} m`, `${f1(x.s.you)}`, `${f1(x.s.ai)}`, `${x.d > 0 ? "+" : "−"}${f1(Math.abs(x.d))}`];
+  T("layerA", [bad ? `Where you use most more than the AI (${L.unit})` : `You use more (${L.unit})`, "You", "AI", "Diff"], d.filter(x => x.d > 0).sort((a, b) => b.d - a.d).slice(0, 6).map(row));
+  T("layerB", [bad ? `Where you use less than the AI (${L.unit})` : `The AI uses more (${L.unit})`, "You", "AI", "Diff"], d.filter(x => x.d < 0).sort((a, b) => a.d - b.d).slice(0, 6).map(row));
+}
+// --- layers that mark points (braking, acceleration)
+function showMarkers(L, kind) {
+  const {scale} = GEO, brake = kind === "braking";
+  L.items.forEach((it, i) => {
+    const a = it.you_m != null ? GEO.at(it.you_m) : null, b = it.ai_m != null ? GEO.at(it.ai_m) : null;
+    const text = brake
+      ? `<b>Braking zone ${i + 1}</b> · you start at ${it.you_m ?? "–"} m, AI at ${it.ai_m ?? "–"} m${it.diff_m != null ? ` (you ${it.diff_m > 0 ? "later" : it.diff_m < 0 ? "earlier" : "level"} by ${Math.abs(it.diff_m)} m)` : ""} · entry speed ${it.you_entry_kmh ?? "–"} / ${it.ai_entry_kmh ?? "–"} km/h · peak brake ${it.you_peak_pct ?? "–"} / ${it.ai_peak_pct ?? "–"} %`
+      : `<b>Corner ${it.corner} (${it.type})</b> · full throttle at ${it.you_m ?? "–"} m (you) vs ${it.ai_m ?? "–"} m (AI)${it.diff_m != null ? ` (you ${it.diff_m < 0 ? "earlier" : it.diff_m > 0 ? "later" : "level"} by ${Math.abs(it.diff_m)} m)` : ""} · speed 100 m later ${it.you_exit_kmh ?? "–"} / ${it.ai_exit_kmh ?? "–"} km/h`;
+    const g = el("g", {tabindex: 0, class: "seg"}); const show = () => { tip.innerHTML = text; };
+    ["mouseenter", "click", "focus"].forEach(ev => g.addEventListener(ev, show));
+    if (a && b) g.appendChild(el("line", {x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: "var(--fg)", "stroke-width": 3 * scale}));
+    if (b) g.appendChild(el("circle", {cx: b[0], cy: b[1], r: 8 * scale, fill: "var(--ai)", stroke: "var(--panel)", "stroke-width": 2 * scale}));
+    if (a) g.appendChild(el("circle", {cx: a[0], cy: a[1], r: 10 * scale, fill: "var(--you)", stroke: "var(--panel)", "stroke-width": 2 * scale}));
+    const t = el("text", {x: (a || b)[0] + 14 * scale, y: (a || b)[1] - 12 * scale, class: "km", "font-size": 24 * scale}); t.textContent = brake ? i + 1 : it.corner; g.appendChild(t);
+    svg.appendChild(g);
+  });
+  legend.innerHTML = sw("var(--you)", "You") + sw("var(--ai)", "Best AI lap") + "<span>The line joins the two points</span>";
+  document.getElementById("layernote").textContent = L.explain;
+  const d = v => v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v) + " m";
+  if (brake) {
+    T("layerA", ["Zone", "You start", "AI starts", "Difference", "Entry speed you / AI", "Peak brake you / AI"], L.items.map((it, i) =>
+      [i + 1, it.you_m ?? "–", it.ai_m ?? "–", d(it.diff_m), `${it.you_entry_kmh ?? "–"} / ${it.ai_entry_kmh ?? "–"}`, `${it.you_peak_pct ?? "–"} / ${it.ai_peak_pct ?? "–"} %`]));
+  } else {
+    T("layerA", ["Corner", "Apex speed you / AI", "Full throttle you / AI", "Difference", "Speed 100 m later you / AI"], L.items.map(it =>
+      [`${it.corner} (${it.type})`, `${it.you_apex_kmh ?? "–"} / ${it.ai_apex_kmh ?? "–"}`, `${it.you_m ?? "–"} / ${it.ai_m ?? "–"} m`, d(it.diff_m), `${it.you_exit_kmh ?? "–"} / ${it.ai_exit_kmh ?? "–"}`]));
+  }
+  document.getElementById("layerB").innerHTML = "";
+}
+const LAYER_DEFS = [["ai", "Time against the best AI"], ["prev", SP ? `Time against your ${SP.previous}` : null], ["battery", "Battery deployment"],
+  ["braking", "Braking points"], ["acceleration", "Acceleration points (corner exits)"], ["fuel", "Fuel use by section: saving points"], ["tyres", "Tyre wear by section"]];
+function drawLayer(id) {
+  baseMap();
+  if (id === "ai" || id === "prev") showTime(id);
+  else { const L = LY[id]; if (L && L.available) { L.kind === "pair" ? showPair(L) : showMarkers(L, id); } }
+  kmMarks();
+  tip.textContent = "Tap or hover a section or point of track for its numbers.";
+}
+if (P.length > 10 && (D.segments || []).length) {
+  GEO = geometry();
+  const sel = document.getElementById("layer");
+  LAYER_DEFS.forEach(([id, name]) => { if (!name) return; const L = LY[id], off = id !== "ai" && id !== "prev" && !(L && L.available);
+    const o = document.createElement("option"); o.value = id; o.textContent = name + (off ? ` (${L && L.note ? L.note : "not available"})` : ""); o.disabled = off; sel.appendChild(o); });
+  sel.addEventListener("change", () => drawLayer(sel.value));
+  drawLayer("ai");
 } else { document.getElementById("mapbox").hidden = true; }
-}
-drawMap("ai");
-if (MODES.prev) {
-  document.getElementById("modes").hidden = false;
-  document.getElementById("m-prev").textContent = `You vs your ${SP.previous}`;
-  const set = m => { drawMap(m); document.getElementById("m-ai").classList.toggle("on", m === "ai"); document.getElementById("m-prev").classList.toggle("on", m === "prev"); };
-  document.getElementById("m-ai").addEventListener("click", () => set("ai"));
-  document.getElementById("m-prev").addEventListener("click", () => set("prev"));
-}
+
 // ---- tables
 const bt = D.by_type_ms || {};
 T("types", ["Type", "Time vs AI"], ["slow","medium","fast","straight"].filter(k => k in bt).map(k => [k, `<span class="${bt[k] > 0 ? "loss" : "gain"}">${bt[k] > 0 ? "lose " : "gain "}${(Math.abs(bt[k])/1000).toFixed(3)} s</span>`]));
