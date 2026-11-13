@@ -10,6 +10,7 @@ Everything here is read-only with respect to the capture service.
 import threading
 from collections import Counter
 
+from . import circuit_store
 from .live_laps import LiveLaps
 
 WANTED = ("Session", "Participants", "LapData", "CarDamage", "CarStatus", "CarTelemetry")
@@ -21,10 +22,11 @@ def ms_from_parts(ms_part, minutes_part):
 
 
 class LiveState:
-    def __init__(self, player_slot=None, lap_log=None):
+    def __init__(self, player_slot=None, lap_log=None, circuit_store_path=None):
         self.lock = threading.RLock()
         self.player_slot_override = player_slot
         self.lap_log = lap_log
+        self.circuit_store_path = circuit_store_path   # None = do not store (tests, simulator choose)
         self._clear()
 
     def reset(self):
@@ -48,6 +50,10 @@ class LiveState:
         self._last_stops = {}
         # Per car pit lane time in lane: {"active": bool, "current_ms": int, "completed_ms": [..]}
         self.pit_lane = {}
+        # Pit loss measured from real stops this session (see _pit_loss_check)
+        self._laps = {}         # car -> list of {"lap", "ms", "pit", "stops_end"}
+        self._lap_pit = {}      # car -> pit lane seen during the current lap
+        self.pit_losses = []    # {"driver", "laps", "loss_s", "ref_s"}
         # Lap-by-lap analysis while driving (see live_laps.py)
         self.live_laps = LiveLaps(self.lap_log) if self.lap_log else LiveLaps()
 
@@ -89,19 +95,77 @@ class LiveState:
                 self.wear_history[i] = []
             self._last_stops[i] = stops
             lap = ld["currentLapNum"]
-            if lap != self._last_lap.get(i) and i < len(self.car_damage):
+            if ld.get("pitStatus") or ld.get("pitLaneTimerActive"):
+                self._lap_pit[i] = True
+            prev = self._last_lap.get(i)
+            if lap != prev and i < len(self.car_damage):
                 self.wear_history.setdefault(i, []).append(
                     {"laps_completed": lap - 1, "wear": list(self.car_damage[i]["tyresWear"])})
+            if prev is not None and lap == prev + 1 and ld.get("lastLapTimeInMS"):
+                self._laps.setdefault(i, []).append({"lap": prev, "ms": ld["lastLapTimeInMS"],
+                                                     "pit": self._lap_pit.get(i, False), "stops_end": stops})
+                self._lap_pit[i] = bool(ld.get("pitStatus") or ld.get("pitLaneTimerActive"))
+                self._pit_loss_check(i)
             self._last_lap[i] = lap
             pl = self.pit_lane.setdefault(i, {"active": False, "current_ms": 0, "completed_ms": []})
             if ld["pitLaneTimerActive"]:
+                if not pl["active"]:
+                    pl["stops_start"] = stops
                 pl["active"] = True
                 pl["current_ms"] = ld["pitLaneTimeInLaneInMS"]
             elif pl["active"]:
                 pl["active"] = False
                 if pl["current_ms"] > 0:
                     pl["completed_ms"].append(pl["current_ms"])
+                    if stops > pl.get("stops_start", stops):     # a real stop, not a garage visit
+                        self._store("pit_lane_ms", {"driver": self._name(i), "ms": pl["current_ms"]})
                 pl["current_ms"] = 0
+
+    def _pit_loss_check(self, i):
+        """After a clean lap that follows a real pit stop (pit lane seen on the in-lap and/or
+        out-lap AND numPitStops went up): loss = pit laps' time - (number of pit laps x this
+        car's median of up to 3 clean laps before the stop, lap 1 excluded)."""
+        laps = self._laps[i]
+        if len(laps) < 3 or laps[-1]["pit"] or not laps[-2]["pit"]:
+            return
+        k = len(laps) - 2
+        pit = []
+        while k >= 0 and laps[k]["pit"]:
+            pit.insert(0, laps[k])
+            k -= 1
+        before = [l for l in laps[: k + 1] if not l["pit"] and l["lap"] > 1][-3:]
+        stops_before = laps[k]["stops_end"] if k >= 0 else 0
+        if len(before) < 2 or pit[-1]["stops_end"] <= stops_before or len(pit) > 2:
+            return
+        ref = sorted(l["ms"] for l in before)[len(before) // 2] / 1000.0
+        loss = sum(l["ms"] for l in pit) / 1000.0 - len(pit) * ref
+        if 5.0 <= loss <= 60.0:     # outside this it is not a normal stop (my sanity limits)
+            row = {"driver": self._name(i), "laps": [l["lap"] for l in pit],
+                   "loss_s": round(loss, 3), "ref_s": round(ref, 3)}
+            self.pit_losses.append(row)
+            self._store("pit_losses", row)
+
+    def _name(self, i):
+        return self.participants[i]["name"] if i < len(self.participants) else f"car {i}"
+
+    def track_id(self):
+        return (self.session or {}).get("trackId")
+
+    def _store(self, kind, row):
+        try:
+            circuit_store.add(self.circuit_store_path, self.track_id(), kind,
+                              dict(row, session_type=(self.session or {}).get("sessionType")))
+        except OSError:
+            self.counts["circuit_store_errors"] += 1
+
+    def measured_pit_loss(self):
+        """Median of pit losses measured from real stops this session, or None."""
+        v = sorted(x["loss_s"] for x in self.pit_losses)
+        return v[len(v) // 2] if v else None
+
+    def stored_pit_loss(self):
+        """(median, count) from earlier races at this track, from the circuit store."""
+        return circuit_store.stored_pit_loss(self.circuit_store_path, self.track_id())
 
     # ---- lookups ------------------------------------------------------
     def player_slot(self):

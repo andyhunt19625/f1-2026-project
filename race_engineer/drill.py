@@ -102,6 +102,8 @@ class Drill:
         self._ask("tyre_status")
         self._ask("damage_status")
         self._ask("pit_window")
+        if self.turn % 10 == 0:
+            self._ask("pit_loss")
         code, w = self._ask("weather_change")
         if code == 200:
             self._weather_watch(w)
@@ -117,7 +119,7 @@ class Drill:
 
     def hammer(self, stop, drivers=()):
         """Ask random questions back to back until stop is set (load test)."""
-        tools = ["status", "gap_to", "tyre_status", "damage_status", "pit_window", "weather_change",
+        tools = ["status", "gap_to", "tyre_status", "damage_status", "pit_window", "pit_loss", "weather_change",
                  "tyre_field", "last_lap", "laps", "ai_deploy", "reminders"]
         while not stop.is_set():
             t = random.choice(tools)

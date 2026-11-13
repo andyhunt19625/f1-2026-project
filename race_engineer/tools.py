@@ -117,8 +117,20 @@ def pit_window(state, pit_loss_s, buffer_s=DEFAULT_BUFFER_S):
     lo, hi = BUFFER_RANGE_S
     if not lo <= buffer_s <= hi:
         raise ToolError(f"Buffer must be between {lo:g} and {hi:g} seconds.")
+    source = "given"
     if pit_loss_s is None:
-        raise ToolError("Pit loss for this circuit has not been measured yet.")
+        with state.lock:
+            pit_loss_s = state.measured_pit_loss()
+            n = len(state.pit_losses)
+            stored, n_stored = state.stored_pit_loss()
+        if pit_loss_s is not None:
+            source = f"measured from {n} pit stop{'s' if n != 1 else ''} this race (median)"
+        elif stored is not None:
+            pit_loss_s = stored
+            source = f"from {n_stored} stop{'s' if n_stored != 1 else ''} in earlier races at this track (median)"
+        else:
+            raise ToolError("Pit loss not known yet: no real pit stop measured at this track. "
+                            "It is measured from the first cars that pit.")
     with state.lock:
         _need_ready(state)
         me = state.player_slot()
@@ -146,10 +158,27 @@ def pit_window(state, pit_loss_s, buffer_s=DEFAULT_BUFFER_S):
                     f"{clear:.1f} seconds clear, short of {buffer_s:g}. You need a "
                     f"{need:.1f} second gap.")
         return {"answer": text, "in_window": ok, "car_behind": name, "gap_behind_s": round(gap, 3),
-                "pit_loss_s": pit_loss_s, "rejoin_clear_s": round(clear, 3),
+                "pit_loss_s": pit_loss_s, "pit_loss_source": source, "rejoin_clear_s": round(clear, 3),
                 "buffer_s": buffer_s, "gap_needed_s": round(need, 3),
-                "unverified": ["Pit loss is whatever figure was passed in; the per-circuit "
-                               "measurement is still to be built."]}
+                "unverified": ["Measured pit loss includes the stop time those cars had and can be skewed "
+                               "by traffic or a safety car on those laps."]}
+
+
+def pit_loss(state):
+    """Pit losses measured from real stops in this session."""
+    with state.lock:
+        rows = list(state.pit_losses)
+        med = state.measured_pit_loss()
+        stored, n_stored = state.stored_pit_loss()
+    if not rows:
+        if stored is not None:
+            return {"answer": f"No stop measured yet this race. Earlier races here: about {stored:.1f} seconds "
+                              f"(median of {n_stored}).", "stops": [], "stored_median_s": stored,
+                    "stored_count": n_stored}
+        return {"answer": "No pit stop measured yet at this track.", "stops": []}
+    return {"answer": f"Pit loss about {med:.1f} seconds (median of {len(rows)} stop{'s' if len(rows) != 1 else ''}: "
+                      + ", ".join(f"{r['driver'].title()} {r['loss_s']:.1f}" for r in rows[-5:]) + ").",
+            "median_s": med, "stops": rows}
 
 
 DAMAGE_PARTS = (("frontLeftWingDamage", "front-left wing"), ("frontRightWingDamage", "front-right wing"),
@@ -267,4 +296,5 @@ def tyre_field(state):
 
 
 TOOLS = {"gap_to": gap_to, "tyre_status": tyre_status, "pit_window": pit_window,
-         "weather_change": weather_change, "damage_status": damage_status, "tyre_field": tyre_field}
+         "weather_change": weather_change, "damage_status": damage_status, "tyre_field": tyre_field,
+         "pit_loss": pit_loss}

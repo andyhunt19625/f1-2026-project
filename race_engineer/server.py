@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .live import DEFAULT_PARSER, FORWARD_PORT, LiveFeed, load_parser
 from .state import LiveState
-from .tools import (DEFAULT_BUFFER_S, ToolError, damage_status, gap_to, pit_window, tyre_field,
+from .tools import (DEFAULT_BUFFER_S, ToolError, damage_status, gap_to, pit_loss, pit_window, tyre_field,
                     tyre_status, weather_change)
 
 DEFAULT_HOST = "127.0.0.1"
@@ -52,6 +52,8 @@ def run_tool(state, q, cfg):
         return weather_change(state)
     if tool == "damage_status":
         return damage_status(state, q.get("driver", "me"))
+    if tool == "pit_loss":
+        return pit_loss(state)
     if tool == "tyre_field":
         return tyre_field(state)
     if tool == "last_lap":
@@ -67,7 +69,7 @@ def run_tool(state, q, cfg):
         with state.lock:
             return state.live_laps.reminders()
     raise ToolError("Unknown tool. Use gap_to, tyre_status, pit_window, weather_change, damage_status, "
-                    "tyre_field, last_lap, laps, ai_deploy or reminders.")
+                    "pit_loss, tyre_field, last_lap, laps, ai_deploy or reminders.")
 
 
 def status(state, feed):
@@ -127,10 +129,14 @@ def main(argv=None):
     ap.add_argument("--feed-port", type=int, default=FORWARD_PORT,
                     help="UDP port for the live feed (the simulator uses a different one)")
     ap.add_argument("--lap-log", default=None, help="where lap reports are appended (default run/live_laps.txt)")
+    ap.add_argument("--circuit-store", default=None,
+                    help="per-circuit pit data file (default run/circuit_data.json; 'none' = do not store)")
     a = ap.parse_args(argv)
 
     from pathlib import Path
-    state = LiveState(lap_log=Path(a.lap_log) if a.lap_log else None)
+    from .circuit_store import DEFAULT as STORE
+    store = None if a.circuit_store == "none" else Path(a.circuit_store) if a.circuit_store else STORE
+    state = LiveState(lap_log=Path(a.lap_log) if a.lap_log else None, circuit_store_path=store)
     feed = LiveFeed(state, load_parser(a.parser), port=a.feed_port).start()
     httpd = make_server(state, feed, a.host, a.port, {"pit_loss": a.pit_loss, "buffer": a.buffer})
     stop = threading.Event()

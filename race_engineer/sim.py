@@ -42,7 +42,8 @@ def _mem_mb(pid):
 
 def start_engineer(lap_log, parser=None):
     cmd = [sys.executable, "-m", "race_engineer.server", "--port", str(Q_PORT),
-           "--feed-port", str(FEED_PORT), "--lap-log", str(lap_log)]
+           "--feed-port", str(FEED_PORT), "--lap-log", str(lap_log),
+           "--circuit-store", str(OUT / "circuit_data_sim.json")]   # never the real store
     if parser:
         cmd += ["--parser", str(parser)]
     p = subprocess.Popen(cmd, cwd=str(ROOT), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
