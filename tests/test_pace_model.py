@@ -54,21 +54,34 @@ class PaceModelTests(unittest.TestCase):
         self.assertIn("saved for this circuit", a["saved"])
         self.assertEqual(len(pace_model.all_gains(store)), 1)
 
-    def test_circuit_history_beats_the_practice_rule_and_global_needs_three_weekends(self):
+    def test_circuit_history_beats_the_practice_rule_and_other_circuits_are_flagged_until_three(self):
         past = (weekend(1, 5, "20261101", (100000, 98000), q_factor=0.02)
                 + weekend(2, 6, "20261108", (90000, 88000), q_factor=0.03))
-        # new weekend at track 5 (seen before): level 1 uses the saved 2 %
+        # new weekend at track 5 (seen before): level 1 uses the saved gain from first practice (3.96 %), then level 2, then 3
         new = weekend(3, 5, "20261115", (100000, 98000))
-        store = past + new
-        lv = pace_model.build(store, new[-1])["levels"]
-        self.assertEqual([l["level"] for l in lv], [1, 3])
-        self.assertAlmostEqual(lv[0]["median_gain_pct"], 2.0, places=1)
-        # new weekend at a new track with 3 saved weekends: global level appears
+        lv = pace_model.build(past + new, new[-1])["levels"]
+        self.assertEqual([l["level"] for l in lv], [1, 2, 3])
+        self.assertAlmostEqual(lv[0]["median_gain_pct"], 3.96, places=1)             # P1 -> Q = 1 - 0.99 x 0.99 x 0.98
+        self.assertAlmostEqual(lv[0]["median_ms"], 100000 * (1 - 0.0396), delta=300)  # applied to THIS weekend's first practice
+        self.assertIn("low confidence", lv[1]["label"])                              # only 2 weekends saved
+        # three saved weekends: no low-confidence flag
         more = weekend(4, 7, "20261122", (80000, 78000), q_factor=0.04)
         store = past + more + weekend(5, 9, "20261129", (70000, 68000))
         lv = pace_model.build(store, store[-1])["levels"]
         self.assertEqual([l["level"] for l in lv], [2, 3])
-        self.assertAlmostEqual(lv[0]["median_gain_pct"], 3.0, places=1)    # median of 2, 3, 4 %
+        self.assertNotIn("low confidence", lv[0]["label"])
+        self.assertAlmostEqual(lv[0]["median_gain_pct"], 4.95, places=1)             # median of 3.96, 4.95, 5.90 %
+
+    def test_one_practice_weekend_predicts_a_new_circuit_from_one_saved_weekend(self):
+        # China-like: one practice, then qualifying 3.6 % quicker. Then a new circuit's first practice.
+        china = [e("20261113T150000Z_x", 1, 2, 1, 95326 + 400, 95326), e("20261113T210000Z_x", 1, 2, 8, 91895 + 400, 91895)]
+        japan = [e("20261120T150000Z_x", 2, 7, 1, 92000 + 400, 92000)]
+        m = pace_model.build(china + japan, japan[0])
+        self.assertEqual([l["level"] for l in m["levels"]], [2])
+        h = m["headline"]
+        self.assertIn("low confidence", h["label"])
+        self.assertAlmostEqual(h["best_gain_pct"], 3.599, places=2)
+        self.assertAlmostEqual(h["best_ms"], 92000 * (1 - 0.03599), delta=5)         # about 1:28.7
 
     def test_wet_and_dry_are_kept_apart_and_restarts_use_the_quickest_attempt(self):
         store = weekend(1, 5, "20261114", (100000, 98000), q_factor=0.02)

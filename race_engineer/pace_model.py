@@ -4,9 +4,12 @@ For each race weekend (same weekendLinkIdentifier and track) and the same condit
 - practice: the MEDIAN of all AI cars' best clean laps in each practice session (and the best AI lap), how much each session
   improved on the one before, in ms and in % (positive = quicker). If a session was restarted, the attempt with the quickest
   AI lap is used.
-- prediction for qualifying = last practice pace x (1 - gain %). The gain % comes from the first level that has data:
+- prediction for qualifying = practice pace x (1 - gain %). Levels 1 and 2 use the gain from the FIRST practice to qualifying and
+  apply it to this weekend's first practice (so weekends with one practice and with three are comparable); level 3 applies
+  this weekend's own practice improvements to its last practice. The gain % comes from the first level that has data:
     1. saved real gains from earlier weekends at THIS circuit (same conditions): the median of them
-    2. saved real gains from at least 3 other weekends anywhere (same conditions): the median of them
+    2. saved real gains from other weekends anywhere (same conditions): the median of them; flagged "low confidence" below 3
+       weekends (it was first used with a single weekend, China 2026, to try Japan)
     3. the same % as this weekend's practice improvements (mean of the steps), Andy's starting rule
 - after qualifying: the real gain % (last practice before it to that qualifying session) is worked out, compared with what
   the model would have predicted from practice alone (other weekends' data only), and kept: it is derived from the pace store
@@ -22,7 +25,7 @@ from pathlib import Path
 PRACTICE = (1, 2, 3, 4)
 QUALI_LIKE = (5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
 MODEL_FILE = Path(__file__).resolve().parent.parent / "run" / "pace_model.json"
-MIN_WEEKENDS_FOR_GLOBAL = 3
+LOW_CONFIDENCE_BELOW = 3        # fewer saved weekends than this: the "other circuits" level is shown but flagged
 
 
 def pct(before, after):
@@ -60,9 +63,11 @@ def gains(prac, quali, qtype=None):
             continue
         before = [p for p in prac if p["folder"] < q["folder"] and p["conditions"] == q["conditions"]]
         if before:
-            p = before[-1]
+            p, f = before[-1], before[0]
             out.append({"quali_type": q["session_type"], "conditions": q["conditions"], "from": p["folder"], "to": q["folder"],
                         "median_pct": pct(p["ai_median_ms"], q["ai_median_ms"]), "best_pct": pct(p["ai_best_ms"], q["ai_best_ms"]),
+                        "first_from": f["folder"], "p1_median_pct": pct(f["ai_median_ms"], q["ai_median_ms"]),
+                        "p1_best_pct": pct(f["ai_best_ms"], q["ai_best_ms"]),
                         "median_ms": q["ai_median_ms"], "best_ms": q["ai_best_ms"]})
     return out
 
@@ -87,17 +92,18 @@ def predict(store, prac, track_id, exclude=None, qtype=None):
     """Prediction levels, best first, for the qualifying that follows `prac` (same-conditions practice, oldest first)."""
     if not prac:
         return []
-    last, cond = prac[-1], prac[-1]["conditions"]
+    first, last, cond = prac[0], prac[-1], prac[-1]["conditions"]
     hist = [g for g in all_gains(store, exclude) if g["conditions"] == cond and (qtype is None or g["quali_type"] == qtype)]
     same = [g for g in hist if g["track_id"] == track_id]
     out = []
     if same:
-        out.append(_level(1, f"saved real gain from {len(same)} earlier weekend{'s' if len(same) != 1 else ''} at this circuit",
-                          [g["median_pct"] for g in same],
-                          [g["best_pct"] for g in same], last))
-    if len({(g["weekend_id"], g["track_id"]) for g in hist}) >= MIN_WEEKENDS_FOR_GLOBAL:
-        out.append(_level(2, f"median of {len(hist)} saved real gains at other circuits", [g["median_pct"] for g in hist],
-                          [g["best_pct"] for g in hist], last))
+        out.append(_level(1, f"saved real gain from {len(same)} earlier weekend{'s' if len(same) != 1 else ''} at this circuit, "
+                             "from first practice", [g["p1_median_pct"] for g in same], [g["p1_best_pct"] for g in same], first))
+    n = len({(g["weekend_id"], g["track_id"]) for g in hist})
+    if n:
+        conf = "" if n >= LOW_CONFIDENCE_BELOW else f" (low confidence: only {n} weekend{'s' if n != 1 else ''} saved so far)"
+        out.append(_level(2, f"median of {len(hist)} saved real gain{'s' if len(hist) != 1 else ''} at other circuits, from first practice{conf}",
+                          [g["p1_median_pct"] for g in hist], [g["p1_best_pct"] for g in hist], first))
     sp = steps(prac)
     if sp:
         out.append(_level(3, f"same % as this weekend's practice improvements ({len(sp)} step{'s' if len(sp) != 1 else ''}, mean)",
