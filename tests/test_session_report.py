@@ -74,7 +74,7 @@ class SetupSuggestionTests(unittest.TestCase):
         s = session_report.setup_suggestions(diff, {"straight": 1133, "slow": 143, "medium": 77, "fast": 2})
         self.assertEqual(len(s), 1)
         self.assertEqual((s[0]["try"], s[0]["you"], s[0]["ai"]), (31, 35, 27))
-        self.assertIn("straight and slow", s[0]["why"])
+        self.assertIn("straights and slow corners", s[0]["why"])
         self.assertIn("Rule of thumb, not measured", s[0]["why"])
         self.assertEqual(session_report.setup_suggestions(diff, {"straight": -300, "slow": 50}), [])      # not losing
         self.assertEqual(session_report.setup_suggestions({"frontWing": {"you": 29, "them": 27}}, {"straight": 500}), [])

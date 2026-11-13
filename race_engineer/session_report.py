@@ -221,7 +221,8 @@ def setup_suggestions(setup_diff, by_type_ms):
             bal = (f" Your front wing is {fw['you'] - (rw.get('you') or 0):+d} from your rear wing"
                    f" ({rw.get('you')}), the AI's is {fw['them'] - (rw.get('them') or 0):+d}." if rw else "")
             out.append({"setting": "frontWing", "you": fw["you"], "ai": fw["them"], "try": half,
-                        "why": ("You lose time on " + " and ".join(sorted(lost)) + " against the AI, and your front wing "
+                        "why": ("You lose time on " + " and ".join({"straight": "straights", "slow": "slow corners"}[k]
+                                                    for k in ("straight", "slow") if k in lost) + " against the AI, and your front wing "
                                 f"is {fw['you'] - fw['them']} above theirs. A lot of front wing adds drag and can make the car "
                                 "unsettled when you get on the power. Rule of thumb, not measured from your data: try halfway, "
                                 "changing only this, then compare the next report's 'Since' section." + bal)})
