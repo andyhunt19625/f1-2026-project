@@ -10,10 +10,10 @@ Everything here is read-only with respect to the capture service.
 import threading
 from collections import Counter
 
-from . import circuit_store
+from . import circuit_store, events as ev
 from .live_laps import LiveLaps
 
-WANTED = ("Session", "Participants", "LapData", "CarDamage", "CarStatus", "CarTelemetry")
+WANTED = ("Session", "Participants", "LapData", "CarDamage", "CarStatus", "CarTelemetry", "Event")
 
 
 def ms_from_parts(ms_part, minutes_part):
@@ -54,6 +54,10 @@ class LiveState:
         self._laps = {}         # car -> list of {"lap", "ms", "pit", "stops_end"}
         self._lap_pit = {}      # car -> pit lane seen during the current lap
         self.pit_losses = []    # {"driver", "laps", "loss_s", "ref_s"}
+        # Race events (Event packets + safety car status), see events.py
+        self.events = []        # {"session_time", "lap", "code", "text", "details"}
+        self.event_counts = Counter()
+        self.safety_car = None  # last Session.safetyCarStatus
         # Lap-by-lap analysis while driving (see live_laps.py)
         self.live_laps = LiveLaps(self.lap_log) if self.lap_log else LiveLaps()
 
@@ -72,6 +76,20 @@ class LiveState:
                 self.session_time = pkt["sessionTime"]
             if name == "Session":
                 self.session = pkt
+                sc = pkt.get("safetyCarStatus")
+                if sc is not None and sc != self.safety_car:
+                    if self.safety_car is not None:
+                        self._event("SC_STATUS", {"from": self.safety_car, "to": sc},
+                                    f"Safety car status: {ev.SAFETY_CAR.get(sc, sc)}.")
+                    self.safety_car = sc
+            elif name == "Event":
+                code = pkt.get("eventCode")
+                self.event_counts[code] += 1
+                if code in ev.LISTED:
+                    text = ev.describe(code, pkt.get("details"), [p["name"] for p in self.participants],
+                                       self.player_slot())
+                    if text:
+                        self._event(code, pkt.get("details"), text)
             elif name == "Participants":
                 self.participants = pkt["participants"]
                 self.num_active = pkt.get("numActiveCars", len(self.participants))
@@ -144,6 +162,12 @@ class LiveState:
                    "loss_s": round(loss, 3), "ref_s": round(ref, 3)}
             self.pit_losses.append(row)
             self._store("pit_losses", row)
+
+    def _event(self, code, details, text):
+        me = self.player_slot()
+        lap = self.lap_data[me]["currentLapNum"] if me is not None and me < len(self.lap_data) else None
+        self.events.append({"session_time": self.session_time, "lap": lap, "code": code,
+                            "text": text, "details": details})
 
     def _name(self, i):
         return self.participants[i]["name"] if i < len(self.participants) else f"car {i}"

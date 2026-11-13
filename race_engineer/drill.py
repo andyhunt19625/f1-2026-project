@@ -48,6 +48,7 @@ class Drill:
         self.lock = threading.Lock()
         self.last_weather_alert = None
         self.last_dry_count = None
+        self.events_seen = 0
 
     def _log(self, rec):
         rec["wall"] = round(self.clock(), 3)
@@ -111,6 +112,9 @@ class Drill:
         if code == 200:
             self._tyre_watch(tf)
         self._ask("last_lap")
+        code, re_ = self._ask("race_events")
+        if code == 200:
+            self._events_watch(re_)
         if self.turn % 10 == 0:
             self._ask("ai_deploy")
             self._ask("reminders")
@@ -119,7 +123,7 @@ class Drill:
 
     def hammer(self, stop, drivers=()):
         """Ask random questions back to back until stop is set (load test)."""
-        tools = ["status", "gap_to", "tyre_status", "damage_status", "pit_window", "pit_loss", "weather_change",
+        tools = ["status", "gap_to", "tyre_status", "damage_status", "pit_window", "pit_loss", "race_events", "weather_change",
                  "tyre_field", "last_lap", "laps", "ai_deploy", "reminders"]
         while not stop.is_set():
             t = random.choice(tools)
@@ -143,6 +147,16 @@ class Drill:
                 self._log({"kind": "event", "event": "drying_soon", "from": w.get("current_name"),
                            "to": to, "in_minutes": mins, "rain_pct_peak": w.get("peak_rain_pct")})
                 self.last_weather_alert = key
+
+    def _events_watch(self, re_):
+        """Log each new race event once (safety car, warnings and penalties, retirements, your contact)."""
+        rows = re_.get("events") or []
+        new = [r for r in rows if (r.get("session_time"), r.get("code"), r.get("text")) not in getattr(self, "_seen", set())]
+        self._seen = getattr(self, "_seen", set())
+        for r in new:
+            self._seen.add((r.get("session_time"), r.get("code"), r.get("text")))
+            self._log({"kind": "event", "event": "race_event", "lap": r.get("lap"), "code": r.get("code"),
+                       "text": r.get("text")})
 
     def _tyre_watch(self, tf):
         """Log every change in how many other cars are on dry tyres, and what you are on."""
@@ -203,6 +217,8 @@ def summary(path):
     for e in events:
         if e["event"] == "drying_soon":
             out.append(f"  Drying forecast at {e['wall']:.0f}: from {e['from']} to code {e['to']} in {e['in_minutes']} min")
+        if e["event"] == "race_event":
+            out.append(f"  Race event lap {e['lap']}: {e['text']}")
         if e["event"] == "field_tyres":
             out.append(f"  Tyres at {e['wall']:.0f}: you on {e['yours']}, {e['others_on_dry']}/{e['others_total']} others on dry")
     missing = [e["lap"] for e in events if e["event"] == "lap_report_missing"]

@@ -295,6 +295,20 @@ def tyre_field(state):
                                "the game so far."]}
 
 
+def race_events(state, last=10):
+    """Safety car now, and the latest race events (yours and race-wide)."""
+    from .events import SAFETY_CAR
+    with state.lock:
+        sc = state.safety_car
+        rows = list(state.events)[-last:]
+        counts = dict(state.event_counts)
+    now = SAFETY_CAR.get(sc, f"safety car status {sc}") if sc is not None else "safety car status not known yet"
+    text = now[0].upper() + now[1:] + "."
+    if rows:
+        text += " Latest: " + " ".join(f"Lap {r['lap']}: {r['text']}" for r in rows[-3:])
+    return {"answer": text, "safety_car_status": sc, "events": rows, "counts": counts}
+
+
 TOOLS = {"gap_to": gap_to, "tyre_status": tyre_status, "pit_window": pit_window,
          "weather_change": weather_change, "damage_status": damage_status, "tyre_field": tyre_field,
-         "pit_loss": pit_loss}
+         "pit_loss": pit_loss, "race_events": race_events}
