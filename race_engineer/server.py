@@ -131,6 +131,8 @@ def main(argv=None):
     ap.add_argument("--feed-port", type=int, default=FORWARD_PORT,
                     help="UDP port for the live feed (the simulator uses a different one)")
     ap.add_argument("--lap-log", default=None, help="where lap reports are appended (default run/live_laps.txt)")
+    ap.add_argument("--live-digests", default=None,
+                    help="where session digests are saved for instant reports (default run/live_digests; 'none' = off)")
     ap.add_argument("--circuit-store", default=None,
                     help="per-circuit pit data file (default run/circuit_data.json; 'none' = do not store)")
     a = ap.parse_args(argv)
@@ -138,7 +140,9 @@ def main(argv=None):
     from pathlib import Path
     from .circuit_store import DEFAULT as STORE
     store = None if a.circuit_store == "none" else Path(a.circuit_store) if a.circuit_store else STORE
-    state = LiveState(lap_log=Path(a.lap_log) if a.lap_log else None, circuit_store_path=store)
+    from .live_laps import LIVE_DIGESTS
+    digests = None if a.live_digests == "none" else Path(a.live_digests) if a.live_digests else LIVE_DIGESTS
+    state = LiveState(lap_log=Path(a.lap_log) if a.lap_log else None, circuit_store_path=store, digest_dir=digests)
     feed = LiveFeed(state, load_parser(a.parser), port=a.feed_port).start()
     httpd = make_server(state, feed, a.host, a.port, {"pit_loss": a.pit_loss, "buffer": a.buffer})
     stop = threading.Event()

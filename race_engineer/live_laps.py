@@ -75,7 +75,8 @@ class _Builder(ers.ErsLapBuilder):
 
 
 class LiveLaps:
-    def __init__(self, log_path=LOG, playbook=None, digest_dir=LIVE_DIGESTS):
+    def __init__(self, log_path=LOG, playbook=None, digest_dir=None):
+        # digest_dir None = do not save digests (tests); the server passes LIVE_DIGESTS.
         self.log_path = log_path
         self.digest_dir = digest_dir
         self.uid = None                 # session UID from the packet header (set by the live feed)

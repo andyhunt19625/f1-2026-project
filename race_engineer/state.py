@@ -23,11 +23,12 @@ def ms_from_parts(ms_part, minutes_part):
 
 
 class LiveState:
-    def __init__(self, player_slot=None, lap_log=None, circuit_store_path=None):
+    def __init__(self, player_slot=None, lap_log=None, circuit_store_path=None, digest_dir=None):
         self.lock = threading.RLock()
         self.player_slot_override = player_slot
         self.lap_log = lap_log
         self.circuit_store_path = circuit_store_path   # None = do not store (tests, simulator choose)
+        self.digest_dir = digest_dir                   # None = do not save live digests (tests)
         self._clear()
 
     def reset(self):
@@ -72,7 +73,8 @@ class LiveState:
         self.event_counts = Counter()
         self.safety_car = None  # last Session.safetyCarStatus
         # Lap-by-lap analysis while driving (see live_laps.py)
-        self.live_laps = LiveLaps(self.lap_log) if self.lap_log else LiveLaps()
+        self.live_laps = (LiveLaps(self.lap_log, digest_dir=self.digest_dir) if self.lap_log
+                          else LiveLaps(digest_dir=self.digest_dir))
 
     # ---- ingest -------------------------------------------------------
     def ingest(self, pkt):
