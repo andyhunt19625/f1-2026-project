@@ -376,6 +376,7 @@ def run(folder, out_dir=DEFAULT_OUT, pace_store=PACE_STORE, digest_path=None):
     in_race = entry["session_type"] in RACES
     res["pace"] = {"this_session": entry,
                    "weekend": [e for e in store if e["weekend_id"] == entry["weekend_id"]
+                               and (e.get("ai_best_ms") or e.get("my_best_ms") or e["folder"] == entry["folder"])
                                and not (in_race and e["session_type"] in QUALIFYING_LIKE)],
                    "prediction": predict_quali(entry, store) if entry["session_type"] in PRACTICE else None}
     res["digest_cached"] = cached
