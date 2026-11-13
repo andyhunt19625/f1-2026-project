@@ -10,6 +10,7 @@ Endpoints (GET, JSON):
   /ask?tool=pit_window[&pit_loss=S][&buffer=S]
   /ask?tool=weather_change
   /ask?tool=last_lap | laps | ai_deploy | reminders   (lap analysis while driving, see live_laps.py)
+  /reports, /reports/latest, /reports/<folder>.html   (the after-session reports, see reports_web.py)
 
 Binds to 127.0.0.1 by default. There is NO authentication, so do not bind it to a
 network address without adding some.
@@ -21,6 +22,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from . import reports_web
 from .live import DEFAULT_PARSER, FORWARD_PORT, LiveFeed, load_parser
 from .state import LiveState
 from .tools import (DEFAULT_BUFFER_S, ToolError, damage_status, gap_to, pit_loss, pit_window, race_events,
@@ -100,11 +102,34 @@ def make_server(state, feed, host=DEFAULT_HOST, port=DEFAULT_PORT, cfg=None):
             self.end_headers()
             self.wfile.write(body)
 
+        def _html(self, code, body):
+            data = body if isinstance(body, bytes) else body.encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_GET(self):
             u = urlparse(self.path)
             q = {k: v[0] for k, v in parse_qs(u.query).items()}
+            rdir = cfg.get("reports_dir", reports_web.DEFAULT_REPORTS)
             try:
-                if u.path == "/status":
+                if u.path in ("/reports", "/reports/"):
+                    self._html(200, reports_web.index_html(rdir))
+                elif u.path == "/reports/latest":
+                    name = reports_web.latest(rdir)
+                    if not name:
+                        self._html(404, "<p>No reports yet.</p>")
+                    else:
+                        self.send_response(302)
+                        self.send_header("Location", f"/reports/{name}")
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                elif u.path.startswith("/reports/"):
+                    page = reports_web.read_report(rdir, u.path[len("/reports/"):])
+                    self._html(200, page) if page is not None else self._html(404, "<p>No such report.</p>")
+                elif u.path == "/status":
                     self._send(200, status(state, feed))
                 elif u.path == "/ask":
                     self._send(200, run_tool(state, q, cfg))

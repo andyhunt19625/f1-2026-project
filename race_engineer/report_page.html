@@ -86,6 +86,7 @@ section.block{display:grid;gap:8px}
     <section class="block"><h2>Setup: you vs the AI</h2><div class="tbl"><table id="setup"></table></div><p class="note" id="rot"></p></section>
     <section class="block"><h2>Battery on your best lap</h2><div class="tbl"><table id="battery"></table></div></section>
   </div>
+  <section class="block" id="attbox" hidden><h2 id="atth"></h2><div class="tbl"><table id="att"></table></div></section>
   <section class="block" id="prevbox" hidden><h2 id="prevh"></h2><p class="note" id="prevsum"></p>
     <div class="cols">
       <div class="tbl"><table id="prevtypes"></table></div>
@@ -177,6 +178,15 @@ if (by) T("battery", ["", "You", "AI"], [["Start → end", `${by.store_start_MJ.
   ["Used / harvested", `${by.deployed_MJ.toFixed(2)} / ${by.harvested_MJ.toFixed(2)} MJ`, ba ? `${ba.deployed_MJ.toFixed(2)} / ${ba.harvested_MJ.toFixed(2)} MJ` : "–"],
   ["Lowest", `${by.store_min_MJ.toFixed(2)} MJ at ${by.store_min_at_m} m`, ba ? `${ba.store_min_MJ.toFixed(2)} MJ at ${ba.store_min_at_m} m` : "–"]]);
 else T("battery", ["Battery"], [["Not used in this session type."]]);
+const AT = D.attempts;
+if (AT && AT.of > 1) {
+  document.getElementById("attbox").hidden = false;
+  document.getElementById("atth").textContent = `Restarts: this is attempt ${AT.number} of ${AT.of} of this session`;
+  T("att", ["Attempt", "Your best", "Best AI", "Setup changes from the attempt before"], AT.list.map((a, i) => [
+    (a.this ? "▶ " : "") + (i + 1), fmt(a.best_ms), fmt(a.ai_best_ms),
+    a.setup_changes == null ? (i ? "not available" : "first attempt") :
+      (Object.keys(a.setup_changes).length ? Object.entries(a.setup_changes).map(([k, v]) => `${k} ${typeof v.before === "number" ? +v.before.toFixed(2) : v.before} → ${typeof v.after === "number" ? +v.after.toFixed(2) : v.after}`).join(", ") : "none")]));
+}
 if (D.since_previous) {
   const X = D.since_previous;
   document.getElementById("prevbox").hidden = false;

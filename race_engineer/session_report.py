@@ -262,9 +262,28 @@ def run(folder, out_dir=DEFAULT_OUT, pace_store=PACE_STORE, digest_path=None):
     res["pace"] = {"this_session": entry, "weekend": [e for e in store if e["weekend_id"] == entry["weekend_id"]],
                    "prediction": predict_quali(entry, store) if entry["session_type"] in PRACTICE else None}
     res["digest_cached"] = cached
-    # the previous session of this weekend at this track, if its digest is already saved
-    earlier = sorted([e for e in store if e["weekend_id"] == entry["weekend_id"] and e["track_id"] == entry["track_id"]
-                      and e["folder"] < entry["folder"]], key=lambda e: e["folder"])
+    weekend = sorted([e for e in store if e["weekend_id"] == entry["weekend_id"] and e["track_id"] == entry["track_id"]],
+                     key=lambda e: e["folder"])
+    # restarts: every attempt at this session type this weekend (the game starts a new session each restart)
+    tries = [e for e in weekend if e["session_type"] == entry["session_type"] and e["folder"] <= entry["folder"]]
+    allt = [e for e in weekend if e["session_type"] == entry["session_type"]]
+    attempts = {"number": len(tries), "of": len(allt), "list": []}
+    prev_dig = None
+    for e in allt:
+        dg = digest if e["folder"] == entry["folder"] else load_saved_digest(parsed.parent.parent / e["folder"])
+        row = {"folder": e["folder"], "this": e["folder"] == entry["folder"], "best_ms": e.get("my_best_ms"),
+               "ai_best_ms": e.get("ai_best_ms"), "setup_changes": None}
+        if dg and prev_dig and dg["meta"]["player"] is not None and prev_dig["meta"]["player"] is not None \
+                and dg.get("setups") and prev_dig.get("setups"):
+            a = prev_dig["setups"][prev_dig["meta"]["player"]]
+            b = dg["setups"][dg["meta"]["player"]]
+            row["setup_changes"] = {k: {"before": a.get(k), "after": b.get(k)} for k in compare.SETUP_FIELDS
+                                    if a.get(k) != b.get(k)}
+        attempts["list"].append(row)
+        prev_dig = dg
+    res["attempts"] = attempts
+    # compare with the last session of a DIFFERENT type this weekend (e.g. FP1), if its digest is saved
+    earlier = [e for e in weekend if e["folder"] < entry["folder"] and e["session_type"] != entry["session_type"]]
     if earlier:
         p = earlier[-1]
         prev = load_saved_digest(parsed.parent.parent / p["folder"])

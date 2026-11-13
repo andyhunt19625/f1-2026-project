@@ -78,6 +78,25 @@ class SessionReportTests(unittest.TestCase):
             res3, _ = session_report.run(os.path.join(d, "20261114T120000Z_p2"), out, store)
             self.assertTrue(res3["digest_cached"])
 
+    def test_restarts_listed_and_compared_with_last_different_session(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, out = Path(d) / "pace.json", Path(d) / "reports"
+            make_session(os.path.join(d, "20261114T100000Z_aa"), 1, 20500)                  # practice
+            for i, (ai, wing) in enumerate(((20400, 12), (20300, 14), (20200, 16))):       # three shootout attempts
+                f = os.path.join(d, f"20261114T13{i}000Z_b{i}")
+                make_session(f, 13, ai)
+                p = Path(f) / "parsed.jsonl"
+                p.write_text(p.read_text().replace('"rearWing": 12}', f'"rearWing": {wing}}}', 1))
+            session_report.run(os.path.join(d, "20261114T100000Z_aa"), out, store)
+            res = None
+            for i in range(3):
+                res, _ = session_report.run(os.path.join(d, f"20261114T13{i}000Z_b{i}"), out, store)
+            self.assertEqual((res["attempts"]["number"], res["attempts"]["of"]), (3, 3))
+            self.assertEqual(res["attempts"]["list"][1]["setup_changes"], {"rearWing": {"before": 12, "after": 14}})
+            self.assertEqual(res["attempts"]["list"][2]["setup_changes"], {"rearWing": {"before": 14, "after": 16}})
+            self.assertEqual(res["since_previous"]["previous"], "Practice 1")      # not attempt 2
+            self.assertEqual(res["since_previous"]["setup_changes"], {"rearWing": {"then": 12, "now": 16}})
+
     def test_other_weekend_ratio_used(self):
         with tempfile.TemporaryDirectory() as d:
             store = Path(d) / "pace.json"
