@@ -98,6 +98,8 @@ section.block{display:grid;gap:8px}
     </div>
   </section>
   <section class="block"><h2>AI pace this weekend</h2><div class="tbl"><table id="pace"></table></div><p class="note" id="pred"></p></section>
+  <section class="block" id="tyrebox" hidden><h2>Tyre wear</h2><p class="note" id="tyresum"></p>
+    <div class="tbl"><table id="tyres"></table></div></section>
   <section class="block" id="fuelbox" hidden><h2>Fuel: what a race would need</h2><p class="note" id="fuelsum"></p>
     <div class="tbl"><table id="fuelplan"></table></div></section>
   <div class="cols">
@@ -205,6 +207,17 @@ if (D.since_previous) {
     T("prevup", ["Most improved", "Gain", "Min speed then / now"], ss.filter(x => x.gain_ms >= 10).sort((a, b) => b.gain_ms - a.gain_ms).slice(0, 5).map(x => [`${x.from_m}–${x.to_m} m (${x.type})`, sgn(x.gain_ms), `${x.then_min_kmh} / ${x.now_min_kmh} km/h`]));
     T("prevdown", ["Got slower", "Loss", "Min speed then / now"], ss.filter(x => x.gain_ms <= -10).sort((a, b) => a.gain_ms - b.gain_ms).slice(0, 5).map(x => [`${x.from_m}–${x.to_m} m (${x.type})`, sgn(-x.gain_ms), `${x.then_min_kmh} / ${x.now_min_kmh} km/h`]));
   }
+}
+const TY = D.tyres;
+if (TY) {
+  document.getElementById("tyrebox").hidden = false;
+  const short = ["RL", "RR", "FL", "FR"];
+  const r = TY.stint_rate_per_lap, ai = TY.ai;
+  const fmtLeft = v => v == null ? "–" : (v === 0 ? "over" : v + " laps");
+  document.getElementById("tyresum").textContent = (r ? `Your current set wore ${TY.your_avg_rate} % a lap on average over ${TY.stint_laps} laps (` + short.map((w, i) => `${w} ${r[i]}`).join(", ") + `). At that rate it reaches ${TY.limit_pct}% in about: ` + short.map((w, i) => `${w} ${fmtLeft(TY.laps_to_limit[i])}`).join(", ") + ". " : "") +
+    (ai ? `The ${ai.cars} AI cars wore ${ai.median_rate_per_lap} % a lap (median). ` : "") +
+    "A straight-line estimate: real wear is not even from lap to lap. Wheel order is from the game's specification (rear-left, rear-right, front-left, front-right) and is not yet confirmed.";
+  T("tyres", ["Lap", "Tyre", "Age", "RL %", "RR %", "FL %", "FR %"], TY.laps.map(l => [l.lap === 0 ? "start" : l.lap, l.compound, l.age ?? "–"].concat(l.wear)));
 }
 const FP = D.fuel_plan;
 if (FP) {

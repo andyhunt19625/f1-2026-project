@@ -170,6 +170,7 @@ def build_report(folder, digest):
             fuel.append({"lap": lap_label(k), "fuel_start_kg": round(l["fuel_start"], 2), "time_ms": l["time_ms"]})
     res["fuel"] = fuel
     res["fuel_plan"] = fuel_summary(digest)
+    res["tyres"] = tyre_summary(digest)
     res["events"] = [{"t": round(e[0] or 0, 1), "lap": e[3] if len(e) > 3 else None, "code": e[1],
                       "text": ev.describe(e[1], e[2], names, me)}
                      for e in digest["events"] if ev.describe(e[1], e[2], names, me)]
@@ -205,6 +206,59 @@ def fuel_summary(digest, config=FUEL_CONFIG):
                                    "need_kg": {str(n): round(burn * (n + form + margin), 1) for n in counts}}
     out["laps_left_out"] = len(rows) - len(use)
     return out if out["conditions"] else None
+
+
+WHEELS = ("rear-left", "rear-right", "front-left", "front-right")     # F1 25 spec order for tyresWear; NOT yet confirmed in game
+WEAR_LIMIT_PCT = 30.0                                                  # Andy: tyres count as degraded at 30% wear
+
+
+def tyre_summary(digest):
+    """Your tyre wear lap by lap, the wear rate of your current stint and a straight-line estimate of when it
+    reaches the 30% mark, set against the AI cars' wear rate. None when fewer than 3 snapshots exist."""
+    from .tools import VISUAL_TYRES
+    import statistics as st
+    log = digest.get("tyre_log") or {}
+    me = digest["meta"]["player"]
+    mine = sorted(log.get(me, []), key=lambda e: e["lap"])
+    if len(mine) < 3:
+        return None
+
+    def stint(entries):
+        """The entries since the last tyre change (age dropped or compound changed)."""
+        out = [entries[-1]]
+        for e in reversed(entries[:-1]):
+            if e["compound"] != out[0]["compound"] or (e["age"] is not None and out[0]["age"] is not None
+                                                      and e["age"] > out[0]["age"]):
+                break
+            out.insert(0, e)
+        return out
+
+    def rate(entries):
+        if len(entries) < 2 or entries[-1]["lap"] == entries[0]["lap"]:
+            return None
+        n = entries[-1]["lap"] - entries[0]["lap"]
+        return [round((b - a) / n, 3) for a, b in zip(entries[0]["wear"], entries[-1]["wear"])]
+    cur = stint(mine)
+    r = rate(cur)
+    last = mine[-1]["wear"]
+    left = [None if (not r or r[i] <= 0) else max(0.0, round((WEAR_LIMIT_PCT - last[i]) / r[i], 1)) for i in range(len(last))]
+    ai_rates, ai_comp = [], {}
+    for slot, entries in log.items():
+        if slot == me or len(entries) < 3:
+            continue
+        e = sorted(entries, key=lambda x: x["lap"])
+        ar = rate(stint(e))
+        if ar:
+            ai_rates.append(sum(ar) / len(ar))
+            name = VISUAL_TYRES.get(e[-1]["compound"], f"compound {e[-1]['compound']}")
+            ai_comp[name] = ai_comp.get(name, 0) + 1
+    return {"wheels": list(WHEELS), "limit_pct": WEAR_LIMIT_PCT,
+            "laps": [{"lap": e["lap"], "wear": [round(w, 1) for w in e["wear"]], "age": e["age"],
+                      "compound": VISUAL_TYRES.get(e["compound"], f"compound {e['compound']}")} for e in mine],
+            "stint_rate_per_lap": r, "stint_laps": len(cur), "laps_to_limit": left,
+            "ai": ({"cars": len(ai_rates), "median_rate_per_lap": round(st.median(ai_rates), 3), "compounds": ai_comp}
+                   if ai_rates else None),
+            "your_avg_rate": round(sum(r) / len(r), 3) if r else None}
 
 
 def setup_suggestions(setup_diff, by_type_ms):

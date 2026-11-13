@@ -24,16 +24,23 @@ DIGEST_NAME = "digest.pkl.gz"
 DIGEST_VERSION = 2   # 2: events and safety car changes carry your lap number
 FRAMED = {"LapData": "lapData", "CarTelemetry": "carTelemetryData", "CarStatus": "carStatusData",
           "Motion": "carMotionData"}
-KEYS = tuple(f'"packet_name": "{k}"' for k in list(FRAMED) + ["Participants", "Session", "CarSetups", "Event"])
+KEYS = tuple(f'"packet_name": "{k}"' for k in list(FRAMED) + ["Participants", "Session", "CarSetups", "Event", "CarDamage"])
 WINDOW = 64
+
+
+def tyre_snap(damage, st, lap):
+    """Tyre wear (4 wheels, % as the game sends it), age in laps and compound code, at the end of `lap`."""
+    return {"lap": lap, "wear": list(damage.get("tyresWear") or []), "age": st.get("tyresAgeLaps"),
+            "compound": st.get("visualTyreCompound")}
 
 
 class _Builder(ErsLapBuilder):
     def add_all(self, ld, tel, st, mo, keep_pos):
+        """Returns the key of a lap that has just been given its time (as live_laps does), else None."""
         before = self.prev_key
         self.add_with_status(ld, tel, st)
         if ld["lapDistance"] < 0:
-            return
+            return None
         lap = self.laps[self.prev_key]
         if self.prev_key != before or "fuel_start" not in lap:
             lap["fuel_start"] = st.get("fuelInTank")
@@ -41,6 +48,9 @@ class _Builder(ErsLapBuilder):
         lap["mix"] = st.get("fuelMix")
         if keep_pos and mo is not None:
             lap.setdefault("pos", []).append((ld["lapDistance"], mo.get("worldPositionX"), mo.get("worldPositionZ")))
+        if before is not None and before != self.prev_key and before in self.laps and self.laps[before]["time_ms"]:
+            return before
+        return None
 
 
 def build(path):
@@ -52,6 +62,8 @@ def build(path):
     pend = {k: {} for k in FRAMED}
     session_time = None
     my_lap = None
+    damage = None
+    tyre_log = {}
     with open(path, encoding="utf-8") as f:
         for line in f:
             if not any(k in line[:120] for k in KEYS):
@@ -82,6 +94,8 @@ def build(path):
                 s = d.get("safetyCarStatus")
                 if s is not None and (not sc or sc[-1][1] != s):
                     sc.append((session_time, s, my_lap))
+            elif kind == "CarDamage":
+                damage = d.get("carDamageData")
             elif kind == "CarSetups":
                 setups = d.get("carSetupData")
             elif kind == "Event":
@@ -95,8 +109,11 @@ def build(path):
                     if meta["player"] is not None and meta["player"] < len(lap):
                         my_lap = lap[meta["player"]]["currentLapNum"]
                     for slot in range(min(meta["n"], len(lap), len(tel), len(st))):
-                        builders[slot].add_all(lap[slot], tel[slot], st[slot],
-                                               mo[slot] if slot < len(mo) else None, slot == meta["player"])
+                        first = builders[slot].prev_key is None
+                        done = builders[slot].add_all(lap[slot], tel[slot], st[slot],
+                                                      mo[slot] if slot < len(mo) else None, slot == meta["player"])
+                        if damage and slot < len(damage) and (done is not None or first):
+                            tyre_log.setdefault(slot, []).append(tyre_snap(damage[slot], st[slot], 0 if first else done[1]))
                 if len(pend[kind]) > WINDOW:
                     pend[kind].pop(next(iter(pend[kind])))
     if meta["names"] and setups:
@@ -104,7 +121,7 @@ def build(path):
     if not meta["track_length"]:
         meta["track_length"] = max((s[0] for b in builders for l in b.laps.values() for s in l["samples"]), default=0)
     return {"version": DIGEST_VERSION, "meta": meta, "laps": [b.laps for b in builders], "setups": setups,
-            "weather": weather, "safety_car": sc, "events": events}
+            "weather": weather, "safety_car": sc, "events": events, "tyre_log": tyre_log}
 
 
 def load(path, rebuild=False):

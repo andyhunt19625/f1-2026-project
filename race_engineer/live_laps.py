@@ -83,6 +83,8 @@ class LiveLaps:
         self.meta_extra = {"total_laps": None, "weekend_id": None, "ai_difficulty": None}
         self.weather, self.sc, self.events, self.setups = [], [], [], None
         self.motion = None
+        self.damage = None
+        self.tyre_log = {}
         self.playbook = load_playbook() if playbook is None else playbook
         self.session_type = None
         self.session_time = None
@@ -112,6 +114,8 @@ class LiveLaps:
                 self.n = n
         elif name == "Motion":
             self.motion = pkt.get("carMotionData")
+        elif name == "CarDamage":
+            self.damage = pkt.get("carDamageData")
         elif name == "CarSetups":
             self.setups = pkt.get("carSetupData")
         elif name == "Event":
@@ -156,7 +160,11 @@ class LiveLaps:
             pos = None
             if slot == self.player and self.motion and slot < len(self.motion):
                 pos = (self.motion[slot].get("worldPositionX"), self.motion[slot].get("worldPositionZ"))
+            first = self.builders[slot].prev_key is None
             done = self.builders[slot].feed(lap[slot], tel[slot], st[slot], pos)
+            if self.damage and slot < len(self.damage) and (done is not None or first):
+                from .session_digest import tyre_snap
+                self.tyre_log.setdefault(slot, []).append(tyre_snap(self.damage[slot], st[slot], 0 if first else done[1]))
             if done is None:
                 continue
             if slot == self.player:
@@ -180,7 +188,8 @@ class LiveLaps:
                 "session_type": self.session_type, "track_length": self.length, "n": self.n, **self.meta_extra}
         return {"version": DIGEST_VERSION, "source": "live", "uid": self.uid, "meta": meta,
                 "laps": [b.laps for b in self.builders], "setups": self.setups[: self.n] if self.setups else None,
-                "weather": list(self.weather), "safety_car": list(self.sc), "events": list(self.events)}
+                "weather": list(self.weather), "safety_car": list(self.sc), "events": list(self.events),
+                "tyre_log": {k: list(v) for k, v in self.tyre_log.items()}}
 
     def save_digest(self, done=False):
         """Write run/live_digests/<uid>.pkl.gz (and <uid>.done when the session is over)."""
