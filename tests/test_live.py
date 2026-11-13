@@ -61,7 +61,7 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(pkt["participants"][0]["name"], "NORRIS")
 
     def test_unwanted_packets_not_decoded(self):
-        h, pkt = decode(StubParser(), dgram("Motion", 5, {}))
+        h, pkt = decode(StubParser(), dgram("SessionHistory", 5, {}))
         self.assertIsNone(pkt)
 
     def test_feeds_state_over_udp(self):

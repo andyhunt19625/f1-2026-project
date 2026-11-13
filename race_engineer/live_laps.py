@@ -10,8 +10,10 @@ Same lap rules as the saved-session tools (session_reader.LapBuilder, lap_analys
 To keep memory small over a long session, AI cars keep only their best clean lap and the
 lap in progress; your laps are all kept.
 """
+import gzip
 import json
 import os
+import pickle
 from pathlib import Path
 
 from . import ers_analysis as ers
@@ -19,6 +21,7 @@ from .lap_analysis import compare, complete, fmt_ms
 from .session_reader import lap_label
 
 LOG = Path(__file__).resolve().parent.parent / "run" / "live_laps.txt"
+LIVE_DIGESTS = Path(__file__).resolve().parent.parent / "run" / "live_digests"
 PLAYBOOK = Path(__file__).resolve().parent / "playbook.json"
 # ersDeployMode names from the F1 25 UDP spec. Checked against Andy's own account of his
 # Australia qualifying laps (12 Nov 2026) before use in reminders.
@@ -51,10 +54,20 @@ WINDOW = 64
 
 
 class _Builder(ers.ErsLapBuilder):
-    def feed(self, ld, tel, st):
-        """Add one sample; return the key of a lap that has just been given its time, or None."""
+    def feed(self, ld, tel, st, pos=None):
+        """Add one sample; return the key of a lap that has just been given its time, or None.
+        Also keeps fuel at lap start and, when pos=(x, z) is given, the car's track position,
+        exactly as session_digest does, so the live digest can replace a full file read."""
         before = self.prev_key
         self.add_with_status(ld, tel, st)
+        if ld["lapDistance"] >= 0 and self.prev_key in self.laps:
+            lap = self.laps[self.prev_key]
+            if self.prev_key != before or "fuel_start" not in lap:
+                lap["fuel_start"] = st.get("fuelInTank")
+            lap["fuel_last"] = st.get("fuelInTank")
+            lap["mix"] = st.get("fuelMix")
+            if pos is not None:
+                lap.setdefault("pos", []).append((ld["lapDistance"], pos[0], pos[1]))
         if before is not None and before != self.prev_key and before in self.laps \
                 and self.laps[before]["time_ms"]:
             return before
@@ -62,8 +75,13 @@ class _Builder(ers.ErsLapBuilder):
 
 
 class LiveLaps:
-    def __init__(self, log_path=LOG, playbook=None):
+    def __init__(self, log_path=LOG, playbook=None, digest_dir=LIVE_DIGESTS):
         self.log_path = log_path
+        self.digest_dir = digest_dir
+        self.uid = None                 # session UID from the packet header (set by the live feed)
+        self.meta_extra = {"total_laps": None, "weekend_id": None, "ai_difficulty": None}
+        self.weather, self.sc, self.events, self.setups = [], [], [], None
+        self.motion = None
         self.playbook = load_playbook() if playbook is None else playbook
         self.session_type = None
         self.session_time = None
@@ -91,7 +109,27 @@ class LiveLaps:
             if n > self.n:
                 self.builders += [_Builder() for _ in range(n - self.n)]
                 self.n = n
+        elif name == "Motion":
+            self.motion = pkt.get("carMotionData")
+        elif name == "CarSetups":
+            self.setups = pkt.get("carSetupData")
+        elif name == "Event":
+            from .events import LISTED
+            if pkt.get("eventCode") in LISTED:
+                self.events.append((self.session_time, pkt["eventCode"], pkt.get("details"), self._my_lap()))
+            if pkt.get("eventCode") == "SEND":
+                self.finish()
         elif name == "Session":
+            for k_out, k_in in (("total_laps", "totalLaps"), ("weekend_id", "weekendLinkIdentifier"),
+                                ("ai_difficulty", "aiDifficulty")):
+                if pkt.get(k_in) is not None:
+                    self.meta_extra[k_out] = pkt[k_in]
+            w = (pkt.get("weather"), pkt.get("trackTemperature"), pkt.get("airTemperature"))
+            if not self.weather or self.weather[-1][1:] != w:
+                self.weather.append((self.session_time,) + w)
+            scs = pkt.get("safetyCarStatus")
+            if scs is not None and (not self.sc or self.sc[-1][1] != scs):
+                self.sc.append((self.session_time, scs, self._my_lap()))
             if pkt.get("trackLength"):
                 self.length = pkt["trackLength"]
             if pkt.get("sessionType") is not None:
@@ -106,11 +144,18 @@ class LiveLaps:
             if len(self.pend[name]) > WINDOW:
                 self.pend[name].pop(next(iter(self.pend[name])))
 
+    def _my_lap(self):
+        b = self.builders[self.player] if self.player is not None and self.player < len(self.builders) else None
+        return b.prev_num if b else None
+
     def _frame(self, lap, tel, st):
         if not self.builders or not self.length:
             return
         for slot in range(min(self.n, len(lap), len(tel), len(st))):
-            done = self.builders[slot].feed(lap[slot], tel[slot], st[slot])
+            pos = None
+            if slot == self.player and self.motion and slot < len(self.motion):
+                pos = (self.motion[slot].get("worldPositionX"), self.motion[slot].get("worldPositionZ"))
+            done = self.builders[slot].feed(lap[slot], tel[slot], st[slot], pos)
             if done is None:
                 continue
             if slot == self.player:
@@ -126,6 +171,37 @@ class LiveLaps:
         for k in list(b.laps):
             if k not in (best_k, active_k, b.prev_key):
                 del b.laps[k]
+
+    # ---- digest (replaces reading the whole file after the session) -----------
+    def digest(self):
+        from .session_digest import DIGEST_VERSION
+        meta = {"names": self.names, "player": self.player, "track_id": self.track_id,
+                "session_type": self.session_type, "track_length": self.length, "n": self.n, **self.meta_extra}
+        return {"version": DIGEST_VERSION, "source": "live", "uid": self.uid, "meta": meta,
+                "laps": [b.laps for b in self.builders], "setups": self.setups[: self.n] if self.setups else None,
+                "weather": list(self.weather), "safety_car": list(self.sc), "events": list(self.events)}
+
+    def save_digest(self, done=False):
+        """Write run/live_digests/<uid>.pkl.gz (and <uid>.done when the session is over)."""
+        if self.uid is None or self.digest_dir is None or not self.builders:
+            return None
+        try:
+            d = Path(self.digest_dir)
+            d.mkdir(parents=True, exist_ok=True)
+            path = d / f"{self.uid}.pkl.gz"
+            tmp = d / f"{self.uid}.tmp"
+            with gzip.open(tmp, "wb", compresslevel=3) as f:
+                pickle.dump(self.digest(), f, protocol=pickle.HIGHEST_PROTOCOL)
+            os.replace(tmp, path)
+            if done:
+                (d / f"{self.uid}.done").write_text("done", encoding="utf-8")
+            return path
+        except OSError:
+            return None
+
+    def finish(self):
+        """The session is over (SEND event, or a new session UID): save the digest and mark it done."""
+        return self.save_digest(done=True)
 
     # ---- analysis -------------------------------------------------------
     def _data(self):
@@ -209,6 +285,7 @@ class LiveLaps:
         res["text"] = "\n".join(lines)
         self.reports.append(res)
         self._log(res["text"])
+        self.save_digest()             # after every lap, so a crash loses at most one lap
 
     def _log(self, text):
         try:

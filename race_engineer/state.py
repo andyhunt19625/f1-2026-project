@@ -13,7 +13,8 @@ from collections import Counter
 from . import circuit_store, events as ev
 from .live_laps import LiveLaps
 
-WANTED = ("Session", "Participants", "LapData", "CarDamage", "CarStatus", "CarTelemetry", "Event")
+WANTED = ("Session", "Participants", "LapData", "CarDamage", "CarStatus", "CarTelemetry", "Event",
+          "Motion", "CarSetups")
 
 
 def ms_from_parts(ms_part, minutes_part):
@@ -33,6 +34,18 @@ class LiveState:
         """Forget everything (a new game session started)."""
         with self.lock:
             self._clear()
+
+    def end_session(self):
+        """The session is over: save the live digest so the report needs no file read."""
+        with self.lock:
+            try:
+                self.live_laps.finish()
+            except Exception:
+                self.counts["live_digest_errors"] += 1
+
+    def set_uid(self, uid):
+        with self.lock:
+            self.live_laps.uid = None if uid is None else format(uid, "016x")
 
     def _clear(self):
         self.session = None

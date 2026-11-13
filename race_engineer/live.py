@@ -72,8 +72,10 @@ class LiveFeed:
                 # must not wipe a live session.
                 if uid and uid != self.session_uid:
                     if self.session_uid is not None:
+                        self.state.end_session()      # save the finished session's digest first
                         self.state.reset()
                     self.session_uid = uid
+                    self.state.set_uid(uid)
                 if pkt is not None:
                     self.state.ingest(pkt)
             except Exception:

@@ -3,7 +3,9 @@
   python -m race_engineer.auto_report run        (started and stopped by `control on` / `control off`)
   python -m race_engineer.auto_report status
 
-Every POLL_S seconds it looks in sessions\\ for folders that
+Every 5 seconds it checks for sessions the engineer has marked done (run/live_digests/<uid>.done); it builds
+those reports from the engineer's saved digest, which takes seconds because nothing is re-read. Every 30 seconds
+it also looks in sessions\\ for folders (the fallback when the engineer was not running) that
 - were still being written after auto-report was first switched on (it never works through old sessions by itself),
 - have a parsed.jsonl of at least MIN_MB, and
 - have not been written to for QUIET_S seconds (the session is over),
@@ -28,7 +30,9 @@ STATE = RUN / "auto_report_state.json"
 STOP = RUN / "auto_report.stop"
 LATEST = RUN / "latest_report.txt"
 LOG = RUN / "auto_report.log"
-POLL_S, QUIET_S, MIN_MB = 30, 90, 50
+POLL_S, QUIET_S, MIN_MB = 5, 90, 50
+LIVE = RUN / "live_digests"          # the engineer writes <uid>.pkl.gz and <uid>.done here (live_laps.py)
+MARKER_GIVE_UP_S = 600              # a marker whose session folder never appears is dropped after this
 BELOW_NORMAL = 0x00004000          # Windows BELOW_NORMAL_PRIORITY_CLASS
 
 
@@ -73,9 +77,29 @@ def candidates(state, sessions=SESSIONS, now=None, quiet_s=QUIET_S, min_mb=MIN_M
     return out
 
 
-def report_one(folder, runner=None):
+def live_markers(sessions=SESSIONS, live=LIVE, min_mb=MIN_MB, now=None):
+    """(folder, digest path, marker) for each session the engineer has marked done.
+    The folder is the biggest one whose name ends with _<uid> (capture names folders <UTC time>_<uid>)."""
+    now = time.time() if now is None else now
+    out, stale = [], []
+    for m in sorted(Path(live).glob("*.done")) if Path(live).is_dir() else []:
+        uid = m.stem
+        dig = m.with_name(f"{uid}.pkl.gz")
+        folders = [f for f in Path(sessions).iterdir() if f.is_dir() and f.name.endswith("_" + uid)
+                   and (f / "parsed.jsonl").is_file()] if Path(sessions).is_dir() else []
+        folders = [f for f in folders if (f / "parsed.jsonl").stat().st_size >= min_mb * 1e6]
+        if folders and dig.is_file():
+            out.append((max(folders, key=lambda f: (f / "parsed.jsonl").stat().st_size), dig, m))
+        elif now - m.stat().st_mtime > MARKER_GIVE_UP_S:
+            stale.append(m)
+    return out, stale
+
+
+def report_one(folder, runner=None, digest=None):
     """Run session_report for one folder in its own low-priority process. Returns (ok, text)."""
     cmd = [sys.executable, "-m", "race_engineer.session_report", str(folder)]
+    if digest:
+        cmd += ["--digest", str(digest)]
     if runner:
         return runner(cmd)
     kw = {"creationflags": BELOW_NORMAL} if os.name == "nt" else {}
@@ -89,13 +113,33 @@ def log(text):
         f.write(f"{_now()} {text}\n")
 
 
-def tick(state, runner=None, sessions=SESSIONS, now=None):
-    """One pass: report every finished session. Returns the folders handled."""
+def tick(state, runner=None, sessions=SESSIONS, now=None, live=LIVE, include_quiet=True):
+    """One pass: report every finished session (engineer's live digests first, then quiet folders).
+    Returns the folders handled."""
     handled = []
-    for folder in candidates(state, sessions, now):
+    jobs = []
+    markers, stale = live_markers(sessions, live, now=now)
+    for m in stale:
+        log(f"no session folder appeared for live digest {m.stem}; using the file-read path instead")
+        m.unlink(missing_ok=True)
+    for folder, dig, m in markers:
+        if folder.name in state.get("done", {}):
+            m.unlink(missing_ok=True)
+            continue
+        jobs.append((folder, dig, m))
+    if include_quiet:
+        live_names = {f.name for f, _, _ in jobs}
+        jobs += [(f, None, None) for f in candidates(state, sessions, now) if f.name not in live_names]
+    for folder, dig, marker in jobs:
         t0 = time.time()
-        ok, text = report_one(folder, runner)
-        state.setdefault("done", {})[folder.name] = ("ok" if ok else "error") + f" in {time.time() - t0:.0f} s"
+        ok, text = report_one(folder, runner, dig)
+        if dig and not ok:                 # live digest failed: fall back to reading the file
+            log(f"{folder.name}: live digest failed, reading the file instead\n{text.strip()}")
+            ok, text = report_one(folder, runner)
+        if marker:
+            marker.unlink(missing_ok=True)
+        state.setdefault("done", {})[folder.name] = (("ok" if ok else "error") + f" in {time.time() - t0:.0f} s"
+                                                     + (" (live digest)" if dig and ok else ""))
         if ok:
             line = next((l for l in text.splitlines() if l.startswith("Report: ")), None)
             if line:
@@ -113,12 +157,15 @@ def run():
         state["since_epoch"] = time.time()
         save_state(state)
     log(f"auto-report started; reporting sessions recorded since {state['since']}")
+    n = 0
     while not STOP.exists():
         try:
-            if tick(state):
+            # live digests every 5 s; the slower file-read fallback every 30 s
+            if tick(state, include_quiet=(n % 6 == 0)):
                 save_state(state)
         except Exception as e:             # keep watching; say what broke
             log(f"error: {e!r}")
+        n += 1
         for _ in range(POLL_S):
             if STOP.exists():
                 break

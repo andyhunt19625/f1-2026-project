@@ -184,10 +184,24 @@ def write(res, out_dir):
     return p
 
 
-def run(folder, out_dir=DEFAULT_OUT, pace_store=PACE_STORE):
+def load_live_digest(path):
+    import gzip
+    import pickle
+    from .session_digest import DIGEST_VERSION
+    with gzip.open(path, "rb") as f:
+        d = pickle.load(f)
+    if d.get("version") != DIGEST_VERSION:
+        raise ValueError(f"live digest version {d.get('version')} != {DIGEST_VERSION}")
+    return d
+
+
+def run(folder, out_dir=DEFAULT_OUT, pace_store=PACE_STORE, digest_path=None):
     folder = Path(folder)
     parsed = folder / "parsed.jsonl" if folder.is_dir() else folder
-    digest, cached = load(parsed)
+    if digest_path:                      # the engineer's live digest: no file read at all
+        digest, cached = load_live_digest(digest_path), "live"
+    else:
+        digest, cached = load(parsed)
     res = build_report(parsed.parent.name, digest)
     res["folder"] = parsed.parent.name
     entry = pace_entry(parsed.parent.name, digest)
@@ -202,8 +216,9 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("folder")
     ap.add_argument("--out", default=str(DEFAULT_OUT))
+    ap.add_argument("--digest", default=None, help="use the engineer's live digest instead of reading the file")
     a = ap.parse_args(argv)
-    res, path = run(a.folder, a.out)
+    res, path = run(a.folder, a.out, digest_path=a.digest)
     gap = (res.get("your_ms") or 0) - (res.get("ai_ms") or 0)
     print(f"{res['session']} at {res['track']} ({res['conditions']}): you {fmt_ms(res['your_ms']) if res.get('your_ms') else '-'}"
           + (f", best AI {res['ai'].title()} {fmt_ms(res['ai_ms'])} ({gap / 1000:+.3f} s)" if res.get("ai_ms") else ""))

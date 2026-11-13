@@ -150,7 +150,7 @@ class Tests(unittest.TestCase):
     def test_replay_file(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "parsed.jsonl")
-            lines = [{"t": 1.0, "packet_name": "Motion", "packet_id": 0, "sessionTime": 0.0},
+            lines = [{"t": 1.0, "packet_name": "SessionHistory", "packet_id": 11, "sessionTime": 0.0},
                      dict(participants(), t=1.1, packet_id=4),
                      dict(lapdata([lap(1, 1, 0, 0)] * 4, 5.0), t=1.2),
                      dict(lapdata([lap(1, 2, 0, 0)] * 4, 99.0), t=1.3)]
@@ -158,7 +158,7 @@ class Tests(unittest.TestCase):
                 f.write("\n".join(json.dumps(x) for x in lines) + "\n")
             s = replay(p, LiveState(), until_session_time=50)
             self.assertEqual(s.counts["LapData"], 1)
-            self.assertEqual(s.counts.get("Motion", 0), 0)
+            self.assertEqual(s.counts.get("SessionHistory", 0), 0)
 
 
 if __name__ == "__main__":
