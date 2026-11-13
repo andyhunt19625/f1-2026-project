@@ -166,12 +166,42 @@ def build_report(folder, digest):
         if l.get("fuel_start") is not None:
             fuel.append({"lap": lap_label(k), "fuel_start_kg": round(l["fuel_start"], 2), "time_ms": l["time_ms"]})
     res["fuel"] = fuel
+    res["fuel_plan"] = fuel_summary(digest)
     res["events"] = [{"t": round(e[0] or 0, 1), "lap": e[3] if len(e) > 3 else None, "code": e[1],
                       "text": ev.describe(e[1], e[2], names, me)}
                      for e in digest["events"] if ev.describe(e[1], e[2], names, me)]
     res["safety_car"] = [{"t": round(x[0] or 0, 1), "lap": x[2] if len(x) > 2 else None,
                           "status": ev.SAFETY_CAR.get(x[1], x[1])} for x in digest["safety_car"]]
     return res
+
+
+FUEL_CONFIG = Path(__file__).resolve().parent / "fuel_config.json"
+
+
+def fuel_summary(digest, config=FUEL_CONFIG):
+    """Your measured burn per lap in this session (dry / wet apart) and the start fuel it implies for the
+    race lengths in fuel_config.json. Burn is measured; formation laps and margin are assumptions (labelled)."""
+    from . import fuel_plan
+    import statistics as st
+    try:
+        cfg = json.loads(Path(config).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cfg = {}
+    counts = cfg.get("lap_counts", [])
+    form, margin = cfg.get("formation_laps", 1), cfg.get("margin_laps", 1.0)
+    _, _, _, rows = fuel_plan.laps_from_digest(digest)
+    use = [r for r in rows if fuel_plan.usable(r)]
+    out = {"assumptions": {"formation_laps": form, "margin_laps": margin}, "conditions": {}}
+    for cond in ("dry", "wet"):
+        v = [r["fuel_start"] - r["fuel_end"] for r in use if (r["weather"] >= 3) == (cond == "wet")]
+        if not v:
+            continue
+        burn = st.median(v)
+        out["conditions"][cond] = {"laps": len(v), "burn_kg": round(burn, 3), "min_kg": round(min(v), 3),
+                                   "max_kg": round(max(v), 3),
+                                   "need_kg": {str(n): round(burn * (n + form + margin), 1) for n in counts}}
+    out["laps_left_out"] = len(rows) - len(use)
+    return out if out["conditions"] else None
 
 
 PAGE = Path(__file__).resolve().parent / "report_page.html"
@@ -290,6 +320,10 @@ def run(folder, out_dir=DEFAULT_OUT, pace_store=PACE_STORE, digest_path=None):
         name = SESSION_NAMES.get(p["session_type"], f"session type {p['session_type']}")
         res["since_previous"] = (since_previous(digest, prev, name) if prev else
                                  {"previous": name, "error": "The earlier session has no saved summary yet."})
+        pf = fuel_summary(prev) if prev else None
+        if pf and res.get("fuel_plan"):
+            res["fuel_plan"]["previous"] = {"name": name, "conditions": {c: {"burn_kg": v["burn_kg"], "laps": v["laps"]}
+                                                                         for c, v in pf["conditions"].items()}}
     return res, write(res, out_dir)
 
 

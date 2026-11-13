@@ -1,0 +1,6 @@
+{
+  "_about": "Race lengths (laps) the reports show a start-fuel figure for. Edit freely. Sprint 7 laps and main race 18-25 laps are what Andy named for China on 13 Nov 2026.",
+  "lap_counts": [7, 18, 19, 20, 21, 22, 23, 24, 25],
+  "formation_laps": 1,
+  "margin_laps": 1.0
+}

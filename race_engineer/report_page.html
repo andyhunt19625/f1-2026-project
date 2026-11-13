@@ -98,6 +98,8 @@ section.block{display:grid;gap:8px}
     </div>
   </section>
   <section class="block"><h2>AI pace this weekend</h2><div class="tbl"><table id="pace"></table></div><p class="note" id="pred"></p></section>
+  <section class="block" id="fuelbox" hidden><h2>Fuel: what a race would need</h2><p class="note" id="fuelsum"></p>
+    <div class="tbl"><table id="fuelplan"></table></div></section>
   <div class="cols">
     <section class="block"><h2>Race events</h2><div class="tbl"><table id="events"></table></div></section>
     <section class="block"><h2>Fuel at the start of each lap</h2><div class="tbl"><table id="fuel"></table></div></section>
@@ -202,6 +204,17 @@ if (D.since_previous) {
     T("prevup", ["Most improved", "Gain", "Min speed then / now"], ss.filter(x => x.gain_ms >= 10).sort((a, b) => b.gain_ms - a.gain_ms).slice(0, 5).map(x => [`${x.from_m}–${x.to_m} m (${x.type})`, sgn(x.gain_ms), `${x.then_min_kmh} / ${x.now_min_kmh} km/h`]));
     T("prevdown", ["Got slower", "Loss", "Min speed then / now"], ss.filter(x => x.gain_ms <= -10).sort((a, b) => a.gain_ms - b.gain_ms).slice(0, 5).map(x => [`${x.from_m}–${x.to_m} m (${x.type})`, sgn(-x.gain_ms), `${x.then_min_kmh} / ${x.now_min_kmh} km/h`]));
   }
+}
+const FP = D.fuel_plan;
+if (FP) {
+  document.getElementById("fuelbox").hidden = false;
+  const cs = Object.keys(FP.conditions), counts = Object.keys(FP.conditions[cs[0]].need_kg);
+  const prev = FP.previous ? FP.previous.conditions : {};
+  document.getElementById("fuelsum").textContent = cs.map(c => { const x = FP.conditions[c], p = prev[c];
+    return `${c}: you burn ${x.burn_kg} kg a lap (median of ${x.laps} laps, range ${x.min_kg}–${x.max_kg})` +
+      (p ? `, ${p.burn_kg} kg in ${FP.previous.name}` + (Math.abs(x.burn_kg - p.burn_kg) >= 0.005 ? ` (${x.burn_kg > p.burn_kg ? "+" : "−"}${Math.abs(x.burn_kg - p.burn_kg).toFixed(3)} kg a lap)` : "") : ""); }).join(". ") +
+    `. Start fuel includes ${FP.assumptions.formation_laps} formation lap and ${FP.assumptions.margin_laps} lap of margin (my assumptions). Safety car laps and pit laps are left out, so a race with a safety car needs less. Burn also depends on how you drive and how you use the battery.`;
+  T("fuelplan", ["Race length"].concat(cs.map(c => `Start fuel (${c})`)), counts.map(n => [`${n} laps`].concat(cs.map(c => `${FP.conditions[c].need_kg[n]} kg`))));
 }
 const pc = D.pace || {};
 T("pace", ["Session", "Conditions", "Best AI", "AI top-5 median", "You"], (pc.weekend || []).map(e => [e.folder.slice(0, 16), e.conditions, fmt(e.ai_best_ms), fmt(e.ai_top5_median_ms), fmt(e.my_best_ms)]));

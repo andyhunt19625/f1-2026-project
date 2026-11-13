@@ -41,6 +41,33 @@ def make_session(folder, session_type, ai_ms, weekend=77, weather=0):
         f.write("\n".join(json.dumps(x) for x in out) + "\n")
 
 
+def fuel_digest(burn, wet=False):
+    laps = {}
+    fuel = 30.0
+    for n in range(1, 8):
+        laps[(1, n, 0)] = {"fuel_start": fuel, "time_ms": 90000, "pit": n == 1, "valid": True, "mix": 1}
+        fuel -= burn
+    laps[(1, 8, 0)] = {"fuel_start": fuel, "time_ms": None, "pit": False, "valid": True, "mix": 1}
+    return {"meta": {"player": 0, "track_id": 2, "session_type": 1, "total_laps": 5}, "laps": [laps],
+            "weather": [(0.0, 3 if wet else 0, 20, 25)], "safety_car": []}
+
+
+class FuelSectionTests(unittest.TestCase):
+    def test_fuel_summary_table(self):
+        f = session_report.fuel_summary(fuel_digest(1.4))
+        d = f["conditions"]["dry"]
+        self.assertAlmostEqual(d["burn_kg"], 1.4, places=3)
+        self.assertEqual(d["laps"], 6)
+        self.assertEqual(d["need_kg"]["7"], round(1.4 * 9, 1))          # 7 laps + formation + margin
+        self.assertEqual(d["need_kg"]["25"], round(1.4 * 27, 1))
+        self.assertEqual(f["assumptions"], {"formation_laps": 1, "margin_laps": 1.0})
+        self.assertNotIn("wet", f["conditions"])
+        self.assertIn("wet", session_report.fuel_summary(fuel_digest(1.1, wet=True))["conditions"])
+        self.assertIsNone(session_report.fuel_summary({"meta": {"player": 0, "track_id": 0, "session_type": 1,
+                                                                 "total_laps": 1}, "laps": [{}], "weather": [],
+                                                       "safety_car": []}))
+
+
 class SessionReportTests(unittest.TestCase):
     def test_report_map_setup_events_and_pace_prediction(self):
         with tempfile.TemporaryDirectory() as d:
