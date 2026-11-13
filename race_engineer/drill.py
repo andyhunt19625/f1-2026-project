@@ -61,7 +61,7 @@ class Drill:
         path = "/ask?" + urlencode(dict(tool=tool, **q))
         code, data, ms = _get(path, self.host, self.port)
         self._log({"kind": "ask", "tool": tool, "q": q, "code": code, "ms": ms,
-                   "error": data.get("error"), "answer": (data.get("answer") or "")[:240]})
+                   "error": data.get("error"), "answer": (data.get("answer") or "")[:600]})
         return code, data
 
     def step(self):
@@ -118,6 +118,11 @@ class Drill:
         if self.turn % 10 == 0:
             self._ask("ai_deploy")
             self._ask("reminders")
+        self._ask("deploy_now")                       # coaching questions (coach.py)
+        if self.turn % 5 == 0:
+            self._ask("where_losing")
+            self._ask("where_losing", ref="ai")
+            self._ask("deploy_more")
         self.turn += 1
 
 
@@ -221,6 +226,10 @@ def summary(path):
             out.append(f"  Race event lap {e['lap']}: {e['text']}")
         if e["event"] == "field_tyres":
             out.append(f"  Tyres at {e['wall']:.0f}: you on {e['yours']}, {e['others_on_dry']}/{e['others_total']} others on dry")
+    for tool in ("where_losing", "deploy_more", "deploy_now"):
+        last = [r for r in asks if r["tool"] == tool and r["code"] == 200 and r.get("answer")]
+        if last:
+            out.append(f"Latest {tool} answer: {last[-1]['answer']}")
     missing = [e["lap"] for e in events if e["event"] == "lap_report_missing"]
     if missing:
         out.append(f"Laps with NO report within {LAP_REPORT_WAIT_S} s: {missing}")

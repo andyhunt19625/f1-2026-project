@@ -23,7 +23,7 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import reports_web
+from . import coach, reports_web
 from .live import DEFAULT_PARSER, FORWARD_PORT, LiveFeed, load_parser
 from .state import LiveState
 from .tools import (DEFAULT_BUFFER_S, ToolError, damage_status, gap_to, pit_loss, pit_window, race_events,
@@ -91,8 +91,14 @@ def run_tool(state, q, cfg):
     if tool == "reminders":
         with state.lock:
             return state.live_laps.reminders()
+    if tool == "where_losing":
+        return coach.where_losing(state, "ai" if q.get("ref") == "ai" else "best")
+    if tool == "deploy_more":
+        return coach.deploy_more(state, "ai" if q.get("ref") == "ai" else "best")
+    if tool == "deploy_now":
+        return coach.deploy_now(state)
     raise ToolError("Unknown tool. Use gap_to, tyre_status, pit_window, weather_change, damage_status, "
-                    "pit_loss, race_events, tyre_field, last_lap, laps, ai_deploy or reminders.")
+                    "pit_loss, race_events, tyre_field, last_lap, laps, ai_deploy, reminders, where_losing, deploy_more or deploy_now.")
 
 
 def status(state, feed):

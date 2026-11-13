@@ -6,6 +6,7 @@
   python3 -m race_engineer.ask pit [pit_loss_seconds] [buffer_seconds]
   python3 -m race_engineer.ask weather
   python3 -m race_engineer.ask lap | laps | aideploy | reminders
+  python3 -m race_engineer.ask lose [ai] | deploymore [ai] | deploy
 """
 import json
 import sys
@@ -16,7 +17,7 @@ import urllib.request
 from .server import DEFAULT_HOST, DEFAULT_PORT
 
 USAGE = ("Use: status | gap <driver> | tyres [driver] | damage [driver] | pit [loss] [buffer] | weather"
-         " | events | pitloss | field | lap | laps | aideploy | reminders")
+         " | events | pitloss | field | lap | laps | aideploy | reminders | lose [ai] | deploymore [ai] | deploy")
 
 
 def build_path(words):
@@ -53,6 +54,13 @@ def build_path(words):
     if cmd in ("lap", "laps", "aideploy", "reminders"):
         return "/ask?tool=" + {"lap": "last_lap", "laps": "laps", "aideploy": "ai_deploy",
                                "reminders": "reminders"}[cmd]
+    if cmd in ("lose", "deploymore"):
+        q = {"tool": "where_losing" if cmd == "lose" else "deploy_more"}
+        if args and args[0] == "ai":
+            q["ref"] = "ai"
+        return "/ask?" + urllib.parse.urlencode(q)
+    if cmd == "deploy":
+        return "/ask?tool=deploy_now"
     raise SystemExit(USAGE)
 
 
