@@ -60,6 +60,12 @@ class SessionReportTests(unittest.TestCase):
             self.assertIn("weakest", res1["rule_of_thumb"])
             self.assertTrue(res1["pace"]["prediction"]["note"])  # one practice only: not enough yet
             res2, page = session_report.run(os.path.join(d, "20261114T120000Z_p2"), out, store)
+            sp = res2["since_previous"]
+            self.assertEqual(sp["previous"], "Practice 1")
+            self.assertEqual((sp["your_then_ms"], sp["your_now_ms"], sp["gain_ms"]), (20000, 20000, 0))
+            self.assertEqual((sp["ai_best_then_ms"], sp["ai_best_now_ms"]), (20500, 20300))
+            self.assertEqual(sp["setup_changes"], {})
+            self.assertEqual(len(sp["segments"]), 10)
             m = res2["pace"]["prediction"]["methods"]
             self.assertEqual(len(m), 1)
             self.assertEqual(m[0]["ai_quali_ms"], 20100)         # 20500 -> 20300, one more step of -200

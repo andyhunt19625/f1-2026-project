@@ -48,6 +48,9 @@ tr:hover td,tr.on td{background:color-mix(in srgb,var(--accent) 12%,transparent)
 @media (prefers-reduced-motion:no-preference){.seg{transition:stroke-width .15s}}
 
 section.block{display:grid;gap:8px}
+.mode{font:inherit;font-size:.85rem;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
+.mode.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+.mode:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .kv div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;gap:2px}
 .kv b{font-family:var(--display);font-size:1.4rem;font-weight:600}
@@ -61,6 +64,11 @@ section.block{display:grid;gap:8px}
     <div class="times" id="times"></div>
   </header>
   <div class="map" id="mapbox">
+    <div class="legend" id="modes" hidden>
+      <span>Map shows:</span>
+      <button type="button" id="m-ai" class="mode on">You vs the best AI</button>
+      <button type="button" id="m-prev" class="mode">You vs your previous session</button>
+    </div>
     <svg id="map" role="img" aria-label="Track map coloured by time gained or lost against the best AI lap in each 100 metres"></svg>
     <div class="legend">
       <span><span class="sw" style="background:var(--gain)"></span>You quicker than the AI</span>
@@ -78,6 +86,16 @@ section.block{display:grid;gap:8px}
     <section class="block"><h2>Setup: you vs the AI</h2><div class="tbl"><table id="setup"></table></div><p class="note" id="rot"></p></section>
     <section class="block"><h2>Battery on your best lap</h2><div class="tbl"><table id="battery"></table></div></section>
   </div>
+  <section class="block" id="prevbox" hidden><h2 id="prevh"></h2><p class="note" id="prevsum"></p>
+    <div class="cols">
+      <div class="tbl"><table id="prevtypes"></table></div>
+      <div class="tbl"><table id="prevsetup"></table></div>
+    </div>
+    <div class="cols">
+      <div class="tbl"><table id="prevup"></table></div>
+      <div class="tbl"><table id="prevdown"></table></div>
+    </div>
+  </section>
   <section class="block"><h2>AI pace this weekend</h2><div class="tbl"><table id="pace"></table></div><p class="note" id="pred"></p></section>
   <div class="cols">
     <section class="block"><h2>Race events</h2><div class="tbl"><table id="events"></table></div></section>
@@ -103,20 +121,30 @@ else {
       `<div class="${gap <= 0 ? "g" : ""}"><span class="eyebrow">Difference</span><b>${sgn(gap)}</b></div>` : "");
 }
 // ---- map
-const P = D.points || [], S = D.segments || [];
+const P = D.points || [];
+const SP = D.since_previous && !D.since_previous.error ? D.since_previous : null;
+const MODES = {ai: {segs: D.segments || [], a: "you", b: "AI", ak: "you_min_kmh", bk: "ai_min_kmh",
+                    good: "You quicker than the AI", bad: "You slower than the AI"},
+               prev: SP ? {segs: SP.segments, a: "now", b: SP.previous, ak: "now_min_kmh", bk: "then_min_kmh",
+                           good: `Quicker than in ${SP.previous}`, bad: `Slower than in ${SP.previous}`} : null};
+function drawMap(mode) {
+const M = MODES[mode], S = M.segs;
+const svg = document.getElementById("map"); svg.innerHTML = "";
+const lg = document.querySelectorAll("#mapbox > .legend")[1].children;
+lg[0].lastChild.textContent = M.good; lg[1].lastChild.textContent = M.bad;
 if (P.length > 10 && S.length) {
   let area = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i+1)%P.length]; area += a[1]*b[2] - b[1]*a[2]; }
   const sx = area < 0 ? -1 : 1, xs = P.map(p => sx*p[1]), ys = P.map(p => p[2]);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-  const pad = 110, W = maxX-minX, H = maxY-minY, svg = document.getElementById("map"), NS = "http://www.w3.org/2000/svg";
+  const pad = 110, W = maxX-minX, H = maxY-minY, NS = "http://www.w3.org/2000/svg";
   svg.setAttribute("viewBox", `${minX-pad} ${minY-pad} ${W+2*pad} ${H+2*pad}`);
   const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
   const scale = Math.max(W, H) / 600;
   svg.appendChild(el("polyline", {points: P.map((p,i) => xs[i]+","+ys[i]).join(" ") + " " + xs[0]+","+ys[0], fill: "none", stroke: "var(--line)", "stroke-width": 16*scale, "stroke-linejoin": "round", "stroke-linecap": "round"}));
   const tip = document.getElementById("tip"), segEls = [];
   const show = i => { const s = S[i], g = s.gain_ms;
-    const what = Math.abs(g) < 10 ? "about level" : (g > 0 ? `you ${(g/1000).toFixed(3)} s quicker` : `AI ${(-g/1000).toFixed(3)} s quicker`);
-    tip.innerHTML = `<b>${s.from_m}–${s.to_m} m</b> · ${what} · min speed you ${s.you_min_kmh} km/h vs AI ${s.ai_min_kmh} km/h`;
+    const what = Math.abs(g) < 10 ? "about level" : (g > 0 ? `${M.a} ${(g/1000).toFixed(3)} s quicker` : `${M.b} ${(-g/1000).toFixed(3)} s quicker`);
+    tip.innerHTML = `<b>${s.from_m}–${s.to_m} m</b> · ${what} · min speed ${M.a} ${s[M.ak]} km/h vs ${M.b} ${s[M.bk]} km/h`;
     segEls.forEach((e, j) => e && e.setAttribute("stroke-width", (j === i ? 1.6 : 1) * +e.dataset.w)); };
   S.forEach((s, i) => { const pts = []; for (let k = 0; k < P.length; k++) if (P[k][0] >= s.from_m && P[k][0] < s.to_m) pts.push(k);
     if (!pts.length) return; const last = pts[pts.length-1]; pts.push(last + 1 < P.length ? last + 1 : 0);
@@ -127,6 +155,15 @@ if (P.length > 10 && S.length) {
     svg.appendChild(el("circle", {cx: xs[k], cy: ys[k], r: 6*scale, fill: m === 0 ? "var(--fg)" : "var(--panel)", stroke: "var(--fg)", "stroke-width": 2*scale}));
     const t = el("text", {x: xs[k] + 14*scale, y: ys[k] - 12*scale, class: "km", "font-size": 22*scale}); t.textContent = m === 0 ? "Start / finish" : m + " m"; svg.appendChild(t); }
 } else { document.getElementById("mapbox").hidden = true; }
+}
+drawMap("ai");
+if (MODES.prev) {
+  document.getElementById("modes").hidden = false;
+  document.getElementById("m-prev").textContent = `You vs your ${SP.previous}`;
+  const set = m => { drawMap(m); document.getElementById("m-ai").classList.toggle("on", m === "ai"); document.getElementById("m-prev").classList.toggle("on", m === "prev"); };
+  document.getElementById("m-ai").addEventListener("click", () => set("ai"));
+  document.getElementById("m-prev").addEventListener("click", () => set("prev"));
+}
 // ---- tables
 const bt = D.by_type_ms || {};
 T("types", ["Type", "Time vs AI"], ["slow","medium","fast","straight"].filter(k => k in bt).map(k => [k, `<span class="${bt[k] > 0 ? "loss" : "gain"}">${bt[k] > 0 ? "lose " : "gain "}${(Math.abs(bt[k])/1000).toFixed(3)} s</span>`]));
@@ -140,6 +177,22 @@ if (by) T("battery", ["", "You", "AI"], [["Start → end", `${by.store_start_MJ.
   ["Used / harvested", `${by.deployed_MJ.toFixed(2)} / ${by.harvested_MJ.toFixed(2)} MJ`, ba ? `${ba.deployed_MJ.toFixed(2)} / ${ba.harvested_MJ.toFixed(2)} MJ` : "–"],
   ["Lowest", `${by.store_min_MJ.toFixed(2)} MJ at ${by.store_min_at_m} m`, ba ? `${ba.store_min_MJ.toFixed(2)} MJ at ${ba.store_min_at_m} m` : "–"]]);
 else T("battery", ["Battery"], [["Not used in this session type."]]);
+if (D.since_previous) {
+  const X = D.since_previous;
+  document.getElementById("prevbox").hidden = false;
+  document.getElementById("prevh").textContent = `Since ${X.previous}`;
+  if (X.error) { document.getElementById("prevsum").textContent = X.error; }
+  else {
+    const ai = X.ai_best_then_ms != null && X.ai_best_now_ms != null ? ` The best AI lap went from ${fmt(X.ai_best_then_ms)} to ${fmt(X.ai_best_now_ms)} (${sgn(X.ai_best_now_ms - X.ai_best_then_ms)}).` : "";
+    document.getElementById("prevsum").textContent = `Your best: ${fmt(X.your_then_ms)} then, ${fmt(X.your_now_ms)} now (${X.gain_ms >= 0 ? (X.gain_ms/1000).toFixed(3) + " s quicker" : (-X.gain_ms/1000).toFixed(3) + " s slower"}).` + ai + " Track grip and fuel also change between sessions, so not every difference is the setup.";
+    const bt2 = X.by_type_gain_ms;
+    T("prevtypes", ["Type", "Now vs then"], ["slow","medium","fast","straight"].map(k => [k, `<span class="${bt2[k] >= 0 ? "gain" : "loss"}">${bt2[k] >= 0 ? "gain " : "lose "}${(Math.abs(bt2[k])/1000).toFixed(3)} s</span>`]));
+    T("prevsetup", ["Setup change", "Then", "Now"], Object.entries(X.setup_changes).map(([k, v]) => [k, typeof v.then === "number" ? +v.then.toFixed(2) : v.then, typeof v.now === "number" ? +v.now.toFixed(2) : v.now]));
+    const ss = X.segments.slice();
+    T("prevup", ["Most improved", "Gain", "Min speed then / now"], ss.filter(x => x.gain_ms >= 10).sort((a, b) => b.gain_ms - a.gain_ms).slice(0, 5).map(x => [`${x.from_m}–${x.to_m} m (${x.type})`, sgn(x.gain_ms), `${x.then_min_kmh} / ${x.now_min_kmh} km/h`]));
+    T("prevdown", ["Got slower", "Loss", "Min speed then / now"], ss.filter(x => x.gain_ms <= -10).sort((a, b) => a.gain_ms - b.gain_ms).slice(0, 5).map(x => [`${x.from_m}–${x.to_m} m (${x.type})`, sgn(-x.gain_ms), `${x.then_min_kmh} / ${x.now_min_kmh} km/h`]));
+  }
+}
 const pc = D.pace || {};
 T("pace", ["Session", "Conditions", "Best AI", "AI top-5 median", "You"], (pc.weekend || []).map(e => [e.folder.slice(0, 16), e.conditions, fmt(e.ai_best_ms), fmt(e.ai_top5_median_ms), fmt(e.my_best_ms)]));
 const pr = pc.prediction;

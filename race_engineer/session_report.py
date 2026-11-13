@@ -24,7 +24,10 @@ DEFAULT_OUT = ROOT.parent / "reports"
 TRACKS = {0: "Melbourne", 2: "Shanghai"}   # only tracks seen in Andy's data (2: China P1, 13 Nov 2026)
 SESSION_NAMES = {1: "Practice 1", 2: "Practice 2", 3: "Practice 3", 4: "Short practice", 5: "Qualifying 1",
                  6: "Qualifying 2", 7: "Qualifying 3", 8: "Short qualifying", 9: "One-shot qualifying",
+                 10: "Sprint shootout 1", 11: "Sprint shootout 2", 12: "Sprint shootout 3",
+                 13: "Short sprint shootout", 14: "One-shot sprint shootout",
                  15: "Race", 16: "Race 2", 17: "Race 3", 18: "Time trial"}
+# 10-14 are the F1 25 specification's names; not yet seen in Andy's data.
 PRACTICE, QUALI = (1, 2, 3, 4), (5, 6, 7, 8, 9)
 
 
@@ -195,6 +198,56 @@ def load_live_digest(path):
     return d
 
 
+def load_saved_digest(folder):
+    """A digest that already exists for a session folder (file-read digest.pkl.gz or the engineer's live one).
+    Never starts a full file read; returns None if neither exists."""
+    import gzip
+    import pickle
+    from .session_digest import DIGEST_NAME, DIGEST_VERSION
+    uid = folder.name.rsplit("_", 1)[-1]
+    for p in (folder / DIGEST_NAME, ROOT / "run" / "live_digests" / f"{uid}.pkl.gz"):
+        try:
+            with gzip.open(p, "rb") as f:
+                d = pickle.load(f)
+            if d.get("version") == DIGEST_VERSION:
+                return d
+        except (OSError, EOFError, pickle.UnpicklingError):
+            continue
+    return None
+
+
+def since_previous(digest, prev, prev_name):
+    """You now against yourself in the previous session of the weekend: lap time, where it changed
+    (100 m sections, typed from your current lap), your setup changes, and the AI's change."""
+    from .lap_analysis import clean_series
+    m, length = digest["meta"], digest["meta"]["track_length"]
+    me, pme = m["player"], prev["meta"]["player"]
+    _, now = _best(digest["laps"][me], length)
+    _, then = _best(prev["laps"][pme], length) if pme is not None else (None, None)
+    if not now or not then:
+        return {"previous": prev_name, "error": "No clean complete lap of yours in one of the two sessions."}
+    series = clean_series(now["samples"])
+    segs, by_type = [], {"slow": 0, "medium": 0, "fast": 0, "straight": 0}
+    for s_ in seg_compare(now, then, length, 100):
+        t, _ = compare.classify(series, s_["from_m"], s_["to_m"], 0.05, 120, 200)
+        g = -s_["loss_ms"]                     # + = quicker now than in the previous session
+        segs.append({"from_m": s_["from_m"], "to_m": s_["to_m"], "gain_ms": g, "type": t,
+                     "now_min_kmh": (s_["you"] or {}).get("min_speed"), "then_min_kmh": (s_["best"] or {}).get("min_speed")})
+        if t in by_type:
+            by_type[t] += g
+    setups_now, setups_then = digest.get("setups"), prev.get("setups")
+    changes = {}
+    if setups_now and setups_then and me < len(setups_now) and pme < len(setups_then):
+        a, b = setups_then[pme], setups_now[me]
+        changes = {k: {"then": a.get(k), "now": b.get(k)} for k in compare.SETUP_FIELDS if a.get(k) != b.get(k)}
+    ai_now = [l["time_ms"] for i, laps in enumerate(digest["laps"]) if i != me for l in [_best(laps, length)[1]] if l]
+    ai_then = [l["time_ms"] for i, laps in enumerate(prev["laps"]) if i != pme for l in [_best(laps, length)[1]] if l]
+    return {"previous": prev_name, "your_then_ms": then["time_ms"], "your_now_ms": now["time_ms"],
+            "gain_ms": then["time_ms"] - now["time_ms"], "segments": segs,
+            "by_type_gain_ms": {k: round(v) for k, v in by_type.items()}, "setup_changes": changes,
+            "ai_best_then_ms": min(ai_then) if ai_then else None, "ai_best_now_ms": min(ai_now) if ai_now else None}
+
+
 def run(folder, out_dir=DEFAULT_OUT, pace_store=PACE_STORE, digest_path=None):
     folder = Path(folder)
     parsed = folder / "parsed.jsonl" if folder.is_dir() else folder
@@ -209,6 +262,15 @@ def run(folder, out_dir=DEFAULT_OUT, pace_store=PACE_STORE, digest_path=None):
     res["pace"] = {"this_session": entry, "weekend": [e for e in store if e["weekend_id"] == entry["weekend_id"]],
                    "prediction": predict_quali(entry, store) if entry["session_type"] in PRACTICE else None}
     res["digest_cached"] = cached
+    # the previous session of this weekend at this track, if its digest is already saved
+    earlier = sorted([e for e in store if e["weekend_id"] == entry["weekend_id"] and e["track_id"] == entry["track_id"]
+                      and e["folder"] < entry["folder"]], key=lambda e: e["folder"])
+    if earlier:
+        p = earlier[-1]
+        prev = load_saved_digest(parsed.parent.parent / p["folder"])
+        name = SESSION_NAMES.get(p["session_type"], f"session type {p['session_type']}")
+        res["since_previous"] = (since_previous(digest, prev, name) if prev else
+                                 {"previous": name, "error": "The earlier session has no saved summary yet."})
     return res, write(res, out_dir)
 
 
