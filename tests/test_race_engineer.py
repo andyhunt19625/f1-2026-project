@@ -120,6 +120,25 @@ class Tests(unittest.TestCase):
         self.assertEqual(r["peak_rain_pct"], 90)
         self.assertIn("in about 10 minutes", r["answer"])
 
+    def test_weather_meaning_and_finish(self):
+        # dry now, light rain forecast in 10 min; race of 10 laps, on lap 5 with a 90 s last lap -> 6 laps = 9 min left
+        pkt = self._session(0, [(0, 0, 5), (5, 0, 20), (10, 3, 70)])
+        pkt.update({"sessionType": 15, "totalLaps": 10})
+        self.s.ingest(pkt)
+        self.s.lap_data = [{"currentLapNum": 5, "lastLapTimeInMS": 90000}] * 4
+        r = weather_change(self.s)
+        self.assertEqual(r["meaning"], "rain arriving (light rain)")
+        self.assertEqual(r["relative_to_finish"], "after the finish")
+        self.assertIn("after the finish", r["answer"])
+
+    def test_weather_cloud_only_and_threat(self):
+        self.s.ingest(self._session(0, [(0, 0, 5), (5, 2, 10)]))
+        self.assertEqual(weather_change(self.s)["meaning"], "getting cloudier")
+        self.s.ingest(self._session(0, [(0, 0, 5), (5, 0, 55)]))
+        self.assertEqual(weather_change(self.s)["meaning"], "threat of rain (up to 55 percent)")
+        self.s.ingest(self._session(3, [(0, 3, 70), (5, 1, 20)]))
+        self.assertEqual(weather_change(self.s)["meaning"], "drying out")
+
     def test_weather_ignores_other_session_type(self):
         # Shape seen on 2026-11-12: session type 15 plus extra samples tagged type 16
         pkt = self._session(3, [(0, 3, 70), (5, 3, 70), (10, 3, 71), (0, 5, 90), (5, 5, 91), (10, 5, 92)])

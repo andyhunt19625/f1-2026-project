@@ -226,6 +226,40 @@ def _wname(code):
     return WEATHER_NAMES.get(code, f"weather code {code}")
 
 
+RAIN_CODES = (3, 4, 5)
+THREAT_RAIN_PCT = 40      # rain chance at which a dry forecast is called a "threat of rain" (my choice, not from the game)
+RACE_TYPES = (15, 16)     # sessionType codes of races seen (sprint, main race); their length is in laps
+
+
+def _change_meaning(cur, new):
+    """Plain words for a change of weather class (names are the spec's; codes 1, 2 and 4 are unconfirmed)."""
+    cur_rain, new_rain = cur in RAIN_CODES, new in RAIN_CODES
+    if not cur_rain and new_rain:
+        return f"rain arriving ({_wname(new)})"
+    if cur_rain and not new_rain:
+        return "drying out"
+    if new_rain:
+        return "rain getting heavier" if new > cur else "rain easing"
+    return "getting cloudier" if new > cur else "clearing up"
+
+
+def _minutes_left(state):
+    """(minutes left, how) for this session, or (None, None). Races: laps left x your last lap time (an estimate).
+    Other sessions: the game's session time left."""
+    s = state.session or {}
+    me = state.player_slot()
+    if s.get("sessionType") in RACE_TYPES and s.get("totalLaps") and me is not None and me < len(state.lap_data):
+        ld = state.lap_data[me]
+        last, lap = ld.get("lastLapTimeInMS"), ld.get("currentLapNum")
+        if last and lap:
+            return max(0, s["totalLaps"] - lap + 1) * last / 60000, "estimate: laps left x your last lap time"
+        return None, None
+    left = s.get("sessionTimeLeft")
+    if left:
+        return left / 60, "the game's session time left"
+    return None, None
+
+
 def weather_change(state):
     """First forecast sample whose weather differs from the current weather."""
     with state.lock:
@@ -246,7 +280,8 @@ def weather_change(state):
                  "Seen in real sessions: code 0 clear; code 3 when the game was set to 'wet' "
                  "(Montreal sprint); code 5 when set to 'very wet' (Austria race). Names here "
                  "are the spec's; the game's own on-screen names for 3 and 5 are not confirmed, "
-                 "and codes 1, 2 and 4 have not been seen."]
+                 "and codes 1, 2 and 4 have not been seen.",
+                 f"'Threat of rain' means a rain chance of {THREAT_RAIN_PCT} percent or more: my own cut-off, not the game's."]
         if change:
             mins = change["timeOffset"]
             text = (f"The weather is forecast to change from {_wname(cur)} to "
@@ -256,7 +291,23 @@ def weather_change(state):
             horizon = samples[-1]["timeOffset"]
             text = (f"No change forecast over the next {horizon} minutes. Rain chance peaks at "
                     f"{peak['rainPercentage']} percent.")
-        return {"answer": text, "current_weather": cur, "current_name": _wname(cur),
+        left, how = _minutes_left(state)
+        meaning, when = None, None
+        if change:
+            meaning, when = _change_meaning(cur, change["weather"]), change["timeOffset"]
+        elif cur not in RAIN_CODES and peak["rainPercentage"] >= THREAT_RAIN_PCT:
+            meaning, when = f"threat of rain (up to {peak['rainPercentage']} percent)", peak["timeOffset"]
+        elif cur not in RAIN_CODES:
+            meaning = "no threat of rain"
+        finish = None
+        if meaning and when is not None and left is not None:
+            finish = "before the finish" if when < left else "after the finish"
+            text += f" That is {meaning}, {finish} (about {round(left)} minutes left, {how})."
+        elif meaning:
+            text += f" That is {meaning}."
+        return {"answer": text, "meaning": meaning, "relative_to_finish": finish,
+                "minutes_left": None if left is None else round(left, 1),
+                "current_weather": cur, "current_name": _wname(cur),
                 "change_at_minutes": change["timeOffset"] if change else None,
                 "change_to": change["weather"] if change else None,
                 "peak_rain_pct": peak["rainPercentage"], "peak_rain_at_minutes": peak["timeOffset"],
