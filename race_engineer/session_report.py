@@ -150,6 +150,7 @@ def build_report(folder, digest):
         res["by_type_ms"] = v["loss_by_type_ms"]
         res["corners"] = sorted(v["corners"], key=lambda c: -c["loss_ms"])[:6]
         res["setup_differences"] = v["setup_differences"]
+        res["setup_suggestions"] = setup_suggestions(v["setup_differences"], v["loss_by_type_ms"])
         worst = max((k for k in ("slow", "medium", "fast", "straight") if k in v["loss_by_type_ms"]),
                     key=lambda k: v["loss_by_type_ms"][k])
         if v["loss_by_type_ms"][worst] > 10:      # only when you actually lose time somewhere
@@ -204,6 +205,27 @@ def fuel_summary(digest, config=FUEL_CONFIG):
                                    "need_kg": {str(n): round(burn * (n + form + margin), 1) for n in counts}}
     out["laps_left_out"] = len(rows) - len(use)
     return out if out["conditions"] else None
+
+
+def setup_suggestions(setup_diff, by_type_ms):
+    """Rule-of-thumb setup notes from the comparison with the AI. NOT measured from your data: they say what to try.
+    Front wing: if yours is 4 or more above the AI's and you are losing time on straights or slow corners
+    (0.1 s or more), suggest halfway to the AI's. (Andy's own note: lowering it made a big difference at Spa.)"""
+    out = []
+    fw = (setup_diff or {}).get("frontWing")
+    if fw and isinstance(fw.get("you"), (int, float)) and isinstance(fw.get("them"), (int, float)):
+        lost = {k: v for k, v in (by_type_ms or {}).items() if k in ("straight", "slow") and v >= 100}
+        if fw["you"] - fw["them"] >= 4 and lost:
+            half = int((fw["you"] + fw["them"]) / 2 + 0.5)
+            rw = (setup_diff or {}).get("rearWing") or {}
+            bal = (f" Your front wing is {fw['you'] - (rw.get('you') or 0):+d} from your rear wing"
+                   f" ({rw.get('you')}), the AI's is {fw['them'] - (rw.get('them') or 0):+d}." if rw else "")
+            out.append({"setting": "frontWing", "you": fw["you"], "ai": fw["them"], "try": half,
+                        "why": ("You lose time on " + " and ".join(sorted(lost)) + " against the AI, and your front wing "
+                                f"is {fw['you'] - fw['them']} above theirs. A lot of front wing adds drag and can make the car "
+                                "unsettled when you get on the power. Rule of thumb, not measured from your data: try halfway, "
+                                "changing only this, then compare the next report's 'Since' section." + bal)})
+    return out
 
 
 PAGE = Path(__file__).resolve().parent / "report_page.html"

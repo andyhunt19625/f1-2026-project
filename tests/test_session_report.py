@@ -68,6 +68,19 @@ class FuelSectionTests(unittest.TestCase):
                                                        "safety_car": []}))
 
 
+class SetupSuggestionTests(unittest.TestCase):
+    def test_front_wing_halfway_only_when_high_and_losing_on_straights_or_slow(self):
+        diff = {"frontWing": {"you": 35, "them": 27}, "rearWing": {"you": 23, "them": 24}}
+        s = session_report.setup_suggestions(diff, {"straight": 1133, "slow": 143, "medium": 77, "fast": 2})
+        self.assertEqual(len(s), 1)
+        self.assertEqual((s[0]["try"], s[0]["you"], s[0]["ai"]), (31, 35, 27))
+        self.assertIn("straight and slow", s[0]["why"])
+        self.assertIn("Rule of thumb, not measured", s[0]["why"])
+        self.assertEqual(session_report.setup_suggestions(diff, {"straight": -300, "slow": 50}), [])      # not losing
+        self.assertEqual(session_report.setup_suggestions({"frontWing": {"you": 29, "them": 27}}, {"straight": 500}), [])
+        self.assertEqual(session_report.setup_suggestions({}, {"straight": 500}), [])
+
+
 class SessionReportTests(unittest.TestCase):
     def test_report_map_setup_events_and_pace_prediction(self):
         with tempfile.TemporaryDirectory() as d:

@@ -175,6 +175,7 @@ T("corners", ["Corner", "Time", "Apex you / AI", "Brake you / AI", "Full throttl
 const sd = D.setup_differences || {};
 T("setup", ["Setting", "You", "AI"], Object.entries(sd).map(([k, v]) => [k, typeof v.you === "number" ? +v.you.toFixed(2) : v.you, typeof v.them === "number" ? +v.them.toFixed(2) : v.them]));
 if (D.rule_of_thumb) document.getElementById("rot").textContent = (D.rule_of_thumb.weakest ? `Weakest area: ${D.rule_of_thumb.weakest}. Rule of thumb, not measured from your data: ${D.rule_of_thumb.text}` : D.rule_of_thumb.text) + ` AI setups are generic and AI pace comes mostly from the difficulty setting, so treat their values as a comparison, not a target.`;
+if ((D.setup_suggestions || []).length) document.getElementById("rot").textContent += "  Suggestion: " + D.setup_suggestions.map(x => `${x.setting} ${x.you} (AI ${x.ai}), try ${x.try}. ${x.why}`).join(" ");
 const by = D.battery_you, ba = D.battery_ai;
 if (by) T("battery", ["", "You", "AI"], [["Start → end", `${by.store_start_MJ.toFixed(2)} → ${by.store_end_MJ.toFixed(2)} MJ`, ba ? `${ba.store_start_MJ.toFixed(2)} → ${ba.store_end_MJ.toFixed(2)} MJ` : "–"],
   ["Used / harvested", `${by.deployed_MJ.toFixed(2)} / ${by.harvested_MJ.toFixed(2)} MJ`, ba ? `${ba.deployed_MJ.toFixed(2)} / ${ba.harvested_MJ.toFixed(2)} MJ` : "–"],
