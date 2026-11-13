@@ -295,8 +295,11 @@ def run(folder, out_dir=DEFAULT_OUT, pace_store=PACE_STORE, digest_path=None):
     weekend = sorted([e for e in store if e["weekend_id"] == entry["weekend_id"] and e["track_id"] == entry["track_id"]],
                      key=lambda e: e["folder"])
     # restarts: every attempt at this session type this weekend (the game starts a new session each restart)
-    tries = [e for e in weekend if e["session_type"] == entry["session_type"] and e["folder"] <= entry["folder"]]
-    allt = [e for e in weekend if e["session_type"] == entry["session_type"]]
+    # a session you never completed a lap in (a restart straight away) is not an attempt: its setup reading
+    # can be the game's default, which showed as a false setup change on 13 Nov 2026
+    real = lambda e: bool(e.get("my_best_ms")) or e["folder"] == entry["folder"]
+    tries = [e for e in weekend if e["session_type"] == entry["session_type"] and e["folder"] <= entry["folder"] and real(e)]
+    allt = [e for e in weekend if e["session_type"] == entry["session_type"] and real(e)]
     attempts = {"number": len(tries), "of": len(allt), "list": []}
     prev_dig = None
     for e in allt:

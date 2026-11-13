@@ -124,6 +124,16 @@ class SessionReportTests(unittest.TestCase):
             self.assertEqual(res["since_previous"]["previous"], "Practice 1")      # not attempt 2
             self.assertEqual(res["since_previous"]["setup_changes"], {"rearWing": {"then": 12, "now": 16}})
 
+    def test_session_without_a_lap_is_not_an_attempt(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, out = Path(d) / "pace.json", Path(d) / "reports"
+            store.write_text(json.dumps([{"folder": "20261114T130000Z_aa", "weekend_id": 77, "track_id": 0,
+                                          "session_type": 15, "conditions": "dry", "ai_best_ms": None,
+                                          "ai_top5_median_ms": None, "my_best_ms": None}]))
+            make_session(os.path.join(d, "20261114T140000Z_bb"), 15, 20500)
+            res, _ = session_report.run(os.path.join(d, "20261114T140000Z_bb"), out, store)
+            self.assertEqual((res["attempts"]["number"], res["attempts"]["of"]), (1, 1))
+
     def test_other_weekend_ratio_used(self):
         with tempfile.TemporaryDirectory() as d:
             store = Path(d) / "pace.json"
