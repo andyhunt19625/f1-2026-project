@@ -79,8 +79,52 @@ def usable(lap):
             and lap.get("fuel_end") is not None and used > 0)
 
 
-def plan(folders, race_laps, margin_laps=1.0, formation_laps=1):
+def laps_from_digest(d):
+    """Your laps from a session digest (session_digest / the engineer's live digest): fuel at the start of each
+    lap and of the next one. No file read. Safety car laps (Session.safetyCarStatus 1 or 2, from the lap it
+    appeared to the lap it ended) and the session's weather (code 3 or more = wet) are applied here."""
+    m, me = d["meta"], d["meta"]["player"]
+    laps = d["laps"][me]
+    sc_laps, start = set(), None
+    for _t, status, lap in d.get("safety_car", []):
+        if status in (1, 2) and start is None:
+            start = lap or 0
+        elif status not in (1, 2) and start is not None:
+            sc_laps.update(range(start, (lap or start) + 1))
+            start = None
+    if start is not None:
+        sc_laps.update(range(start, 1000))
+    codes = [w[1] for w in d.get("weather", []) if w[1] is not None]
+    wet = bool(codes) and codes[0] >= 3
+    keys, out = sorted(laps), []
+    for k in keys:
+        nxt = [x for x in keys if x[0] == k[0] and x[1] == k[1] + 1]
+        l = laps[k]
+        if not nxt or l.get("fuel_start") is None or laps[nxt[0]].get("fuel_start") is None:
+            continue
+        out.append({"lap": k[1], "fuel_start": l["fuel_start"], "fuel_end": laps[nxt[0]]["fuel_start"],
+                    "time_ms": l.get("time_ms"), "pit": l["pit"], "invalid": not l["valid"],
+                    "sc": k[1] in sc_laps, "weather": 3 if wet else 0, "mix": l.get("mix")})
+    return m["track_id"], m["session_type"], m["total_laps"], out
+
+
+def load_digest_file(path):
+    import gzip
+    import pickle
+    with gzip.open(path, "rb") as f:
+        return pickle.load(f)
+
+
+def plan(folders, race_laps, margin_laps=1.0, formation_laps=1, digests=()):
     rows, tracks = [], set()
+    for dpath in digests:
+        track, stype, total, laps = laps_from_digest(load_digest_file(dpath))
+        tracks.add(track)
+        for l in laps:
+            if usable(l):
+                rows.append({"session": Path(dpath).name, "session_type": stype, "lap": l["lap"],
+                             "kg": round(l["fuel_start"] - l["fuel_end"], 3), "wet": (l["weather"] or 0) >= 3,
+                             "mix": l["mix"], "time_ms": l["time_ms"]})
     for folder in folders:
         p = Path(folder) / "parsed.jsonl"
         if not p.is_file():
@@ -143,15 +187,16 @@ def folders_for_track(track_id, sessions=SESSIONS, min_mb=50):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("folders", nargs="*")
+    ap.add_argument("--digests", nargs="*", default=[], help="saved session digests (digest.pkl.gz, live_digests\\*.pkl.gz): no file read")
     ap.add_argument("--track", type=int, default=None)
     ap.add_argument("--laps", type=int, required=True, help="race length in laps")
     ap.add_argument("--margin-laps", type=float, default=1.0)
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     folders = list(a.folders) + ([str(f) for f in folders_for_track(a.track)] if a.track is not None else [])
-    if not folders:
-        raise SystemExit("Give session folders, or --track N.")
-    res = plan(folders, a.laps, a.margin_laps)
+    if not folders and not a.digests:
+        raise SystemExit("Give session folders, --digests, or --track N.")
+    res = plan(folders, a.laps, a.margin_laps, digests=a.digests)
     print(json.dumps(res, indent=1) if a.json else report(res))
 
 

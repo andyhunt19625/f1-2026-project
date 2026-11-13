@@ -54,5 +54,30 @@ class FuelPlanTests(unittest.TestCase):
             self.assertEqual(res["dry"]["laps"], 3)
 
 
+class DigestTests(unittest.TestCase):
+    def test_burn_from_digest_skips_pit_safety_car_and_applies_weather(self):
+        laps = {}
+        fuel = 20.0
+        for n in range(1, 8):
+            laps[(1, n, 0)] = {"fuel_start": fuel, "time_ms": 90000, "pit": n == 1, "valid": True, "mix": 1}
+            fuel -= 0.5 if n in (4, 5) else 1.4          # laps 4-5 under the safety car
+        laps[(1, 8, 0)] = {"fuel_start": fuel, "time_ms": None, "pit": False, "valid": True, "mix": 1}
+        d = {"meta": {"player": 0, "track_id": 2, "session_type": 1, "total_laps": 5},
+             "laps": [laps], "weather": [(0.0, 0, 20, 25)], "safety_car": [(100.0, 1, 4), (200.0, 0, 5)]}
+        track, stype, total, rows = fuel_plan.laps_from_digest(d)
+        self.assertEqual((track, stype), (2, 1))
+        used = [r["lap"] for r in rows if fuel_plan.usable(r)]
+        self.assertEqual(used, [2, 3, 6, 7])             # lap 1 pit, laps 4-5 safety car
+        import gzip, pickle, tempfile as tf
+        with tf.TemporaryDirectory() as t:
+            p = os.path.join(t, "digest.pkl.gz")
+            with gzip.open(p, "wb") as f:
+                pickle.dump(d, f)
+            res = fuel_plan.plan([], 20, digests=[p])
+            self.assertAlmostEqual(res["dry"]["burn_kg_per_lap"], 1.4, places=3)
+            self.assertAlmostEqual(res["dry"]["start_fuel_kg"], 1.4 * 22, places=1)
+            self.assertIsNone(res["wet"])
+
+
 if __name__ == "__main__":
     unittest.main()
