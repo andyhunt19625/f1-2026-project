@@ -81,12 +81,16 @@ class LiveLaps:
             self.session_time = pkt["sessionTime"]
         if name == "Participants":
             n = pkt.get("numActiveCars", len(pkt["participants"]))
+            # Never shrink or rebuild: in the Australia race (13 Nov 2026) numActiveCars dropped
+            # 22 -> 21 mid-race (a car out) and rebuilding here wiped every lap, so the reports
+            # said "First clean lap" again. Keep every slot seen; only grow.
+            n = max(n, self.n)
             parts = pkt["participants"][:n]
             self.names = [p["name"] for p in parts]
             self.player = next((i for i, p in enumerate(parts) if p.get("aiControlled") == 0), None)
-            if n != self.n:
+            if n > self.n:
+                self.builders += [_Builder() for _ in range(n - self.n)]
                 self.n = n
-                self.builders = [_Builder() for _ in range(n)]
         elif name == "Session":
             if pkt.get("trackLength"):
                 self.length = pkt["trackLength"]

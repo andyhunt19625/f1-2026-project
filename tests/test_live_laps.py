@@ -55,6 +55,28 @@ class LiveLapTests(unittest.TestCase):
         self.assertLessEqual(len(b.laps), 2)
 
 
+class CarCountTests(unittest.TestCase):
+    def test_a_car_leaving_does_not_wipe_laps(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "parsed.jsonl")
+            build(p)
+            state = LiveState(lap_log=Path(d) / "laps.txt")
+            with open(p) as f:
+                pkts = [json.loads(l) for l in f]
+            for i, pkt in enumerate(pkts):
+                for ld in pkt.get("lapData", []):
+                    ld.update(numPitStops=0, pitLaneTimerActive=0, pitLaneTimeInLaneInMS=0)
+                state.ingest(pkt)
+                if i == len(pkts) // 2:      # mid-session the game reports one car fewer
+                    state.ingest({"packet_name": "Participants", "numActiveCars": 1,
+                                  "participants": [{"aiControlled": 0, "name": "NORRIS"},
+                                                   {"aiControlled": 1, "name": "SAINZ"}]})
+            reps = state.live_laps.reports
+            self.assertEqual([r["lap"] for r in reps], ["lap 1", "lap 2"])
+            self.assertNotIn("First clean lap", reps[1]["text"])
+            self.assertEqual(reps[1]["gap_to_best_ms"], 0)
+
+
 class ReminderTests(unittest.TestCase):
     RULE = [{"when": ["qualifying", "practice"], "track_id": 0, "track_name": "Australia",
              "elsewhere": "practice_note", "check": "ers_mode_none", "text": "Use mode none."}]
