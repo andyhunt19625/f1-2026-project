@@ -47,6 +47,7 @@ tr:hover td,tr.on td{background:color-mix(in srgb,var(--accent) 12%,transparent)
 .km{font-family:var(--mono);fill:var(--fg);paint-order:stroke;stroke:var(--panel);stroke-width:4px}
 @media (prefers-reduced-motion:no-preference){.seg{transition:stroke-width .15s}}
 
+[hidden]{display:none!important}
 section.block{display:grid;gap:8px}
 .mode{font:inherit;font-size:.85rem;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
 .mode.on{border-color:var(--accent);color:var(--accent);font-weight:600}
@@ -97,6 +98,8 @@ section.block{display:grid;gap:8px}
       <div class="tbl"><table id="prevdown"></table></div>
     </div>
   </section>
+  <section class="block" id="modelbox" hidden><h2>AI pace and the qualifying prediction</h2><div class="tbl"><table id="modelp"></table></div>
+    <div class="tbl"><table id="modelpred"></table></div><p class="note" id="modelnote"></p></section>
   <section class="block"><h2>AI pace this weekend</h2><div class="tbl"><table id="pace"></table></div><p class="note" id="pred"></p></section>
   <section class="block" id="tyrebox" hidden><h2>Tyre wear</h2><p class="note" id="tyresum"></p>
     <div class="tbl"><table id="tyres"></table></div></section>
@@ -231,9 +234,24 @@ if (FP) {
   T("fuelplan", ["Race length"].concat(cs.map(c => `Start fuel (${c})`)), counts.map(n => [`${n} laps`].concat(cs.map(c => `${FP.conditions[c].need_kg[n]} kg`))));
 }
 const pc = D.pace || {};
+const MD = pc.model;
+if (MD) {
+  document.getElementById("modelbox").hidden = false;
+  const pctf = v => v == null ? "–" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2) + " %";
+  T("modelp", ["Practice session", "AI median", "Best AI", "Median vs previous session", "Best vs previous session"],
+    MD.practice.map(r => [r.folder.slice(0, 16), fmt(r.median_ms), fmt(r.best_ms),
+      r.step ? `${sgn(-r.step.median_ms)} (${pctf(r.step.median_pct)})` : "–", r.step ? `${sgn(-r.step.best_ms)} (${pctf(r.step.best_pct)})` : "–"]));
+  const A = MD.actual;
+  T("modelpred", ["Prediction for qualifying", "Gain used", "AI median", "Best AI lap"].concat(A ? ["Median error", "Best-lap error"] : []),
+    MD.levels.map((l, i) => [(i === 0 ? "▶ " : "") + l.label, `${l.median_gain_pct} % / ${l.best_gain_pct} %`, fmt(l.median_ms), fmt(l.best_ms)].concat(A ?
+      (() => { const e = A.errors.find(x => x.level === l.level); return e ? [sgn(e.median_error_ms), sgn(e.best_error_ms)] : ["–", "–"]; })() : [])));
+  document.getElementById("modelnote").textContent = (MD.note || "") +
+    (A ? ` Actual qualifying: AI median ${fmt(A.median_ms)}, best AI lap ${fmt(A.best_ms)}: ${A.saved} Errors are prediction minus actual (a plus means the model was too slow).` : "") +
+    " The prediction applies a % gain to the last practice; the gain comes from saved real gains where there are any, otherwise from this weekend's practice improvements. A model, not a measurement.";
+}
 T("pace", ["Session", "Conditions", "Best AI", "AI top-5 median", "You"], (pc.weekend || []).map(e => [e.folder.slice(0, 16), e.conditions, fmt(e.ai_best_ms), fmt(e.ai_top5_median_ms), fmt(e.my_best_ms)]));
 const pr = pc.prediction;
-document.getElementById("pred").textContent = pr ? (pr.methods.length ? "Predicted best AI qualifying lap (" + pr.conditions + "): " + pr.methods.map(m => `${fmt(m.ai_quali_ms)} from ${m.method}`).join("; ") + ". A prediction, not a measurement." : (pr.note || "")) : "Prediction is made after practice sessions.";
+document.getElementById("pred").textContent = MD ? "" : pr ? (pr.methods.length ? "Predicted best AI qualifying lap (" + pr.conditions + "): " + pr.methods.map(m => `${fmt(m.ai_quali_ms)} from ${m.method}`).join("; ") + ". A prediction, not a measurement." : (pr.note || "")) : "Prediction is made after practice sessions.";
 const evRows = (D.safety_car || []).map(s => ({t: s.t, lap: s.lap, text: `Safety car status: ${s.status}`})).concat((D.events || []).map(e => ({t: e.t, lap: e.lap, text: e.text})));
 evRows.sort((a, b) => (a.lap ?? 0) - (b.lap ?? 0) || a.t - b.t);
 T("events", ["Your lap", "Event"], evRows.map(e => [e.lap ?? "–", e.text]));

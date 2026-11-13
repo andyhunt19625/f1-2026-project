@@ -13,7 +13,7 @@ import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import compare, ers_analysis as ers, events as ev
+from . import compare, ers_analysis as ers, events as ev, pace_model
 from .lap_analysis import compare as seg_compare, complete, fmt_ms
 from .session_digest import as_compare_data, load
 from .session_reader import lap_label
@@ -64,6 +64,7 @@ def pace_entry(folder, digest):
             "session_type": m["session_type"], "conditions": conditions(digest),
             "ai_best_ms": ai[0] if ai else None,
             "ai_top5_median_ms": statistics.median(ai[:5]) if ai else None,
+            "ai_median_ms": round(statistics.median(ai)) if len(ai) >= 3 else None, "ai_n": len(ai),
             "my_best_ms": ml["time_ms"] if ml else None, "ai_difficulty": m["ai_difficulty"]}
 
 
@@ -375,6 +376,9 @@ def run(folder, out_dir=DEFAULT_OUT, pace_store=PACE_STORE, digest_path=None):
                                and not (in_race and e["session_type"] in QUALIFYING_LIKE)],
                    "prediction": predict_quali(entry, store) if entry["session_type"] in PRACTICE else None}
     res["digest_cached"] = cached
+    if entry["session_type"] in PRACTICE or entry["session_type"] in QUALIFYING_LIKE:
+        res["pace"]["model"] = pace_model.build(store, entry)
+        pace_model.save(store)
     weekend = sorted([e for e in store if e["weekend_id"] == entry["weekend_id"] and e["track_id"] == entry["track_id"]],
                      key=lambda e: e["folder"])
     # restarts: every attempt at this session type this weekend (the game starts a new session each restart)
