@@ -124,6 +124,21 @@ class SessionReportTests(unittest.TestCase):
             self.assertEqual(res["since_previous"]["previous"], "Practice 1")      # not attempt 2
             self.assertEqual(res["since_previous"]["setup_changes"], {"rearWing": {"then": 12, "now": 16}})
 
+    def test_race_report_compares_with_practice_not_qualifying(self):
+        with tempfile.TemporaryDirectory() as d:
+            store, out = Path(d) / "pace.json", Path(d) / "reports"
+            make_session(os.path.join(d, "20261114T100000Z_p1"), 1, 20500)
+            make_session(os.path.join(d, "20261114T120000Z_q1"), 8, 20100)
+            make_session(os.path.join(d, "20261114T140000Z_r1"), 15, 20300)
+            for name in ("p1", "q1"):
+                session_report.run(os.path.join(d, f"2026111{'4T100000Z' if name == 'p1' else '4T120000Z'}_{name}"), out, store)
+            res, _ = session_report.run(os.path.join(d, "20261114T140000Z_r1"), out, store)
+            self.assertEqual(res["since_previous"]["previous"], "Practice 1")
+            self.assertEqual([e["session_type"] for e in res["pace"]["weekend"]], [1, 15])
+            # a qualifying report still sees the whole weekend
+            resq, _ = session_report.run(os.path.join(d, "20261114T120000Z_q1"), out, store)
+            self.assertEqual(sorted(e["session_type"] for e in resq["pace"]["weekend"]), [1, 8, 15])
+
     def test_session_without_a_lap_is_not_an_attempt(self):
         with tempfile.TemporaryDirectory() as d:
             store, out = Path(d) / "pace.json", Path(d) / "reports"

@@ -29,6 +29,8 @@ SESSION_NAMES = {1: "Practice 1", 2: "Practice 2", 3: "Practice 3", 4: "Short pr
                  15: "Race", 16: "Race 2", 17: "Race 3", 18: "Time trial"}
 # 10-14 are the F1 25 specification's names; not yet seen in Andy's data.
 PRACTICE, QUALI = (1, 2, 3, 4), (5, 6, 7, 8, 9)
+RACES = (15, 16, 17)
+QUALIFYING_LIKE = QUALI + (10, 11, 12, 13, 14)     # includes sprint shootouts (10-14, spec names; 13 seen)
 
 
 def _best(laps, length, need_active=False):
@@ -289,7 +291,11 @@ def run(folder, out_dir=DEFAULT_OUT, pace_store=PACE_STORE, digest_path=None):
     res["folder"] = parsed.parent.name
     entry = pace_entry(parsed.parent.name, digest)
     store = store_pace(entry, pace_store)
-    res["pace"] = {"this_session": entry, "weekend": [e for e in store if e["weekend_id"] == entry["weekend_id"]],
+    # Race reports are set against practice runs and the AI only: no qualifying or shootout laps (Andy, 13 Nov 2026)
+    in_race = entry["session_type"] in RACES
+    res["pace"] = {"this_session": entry,
+                   "weekend": [e for e in store if e["weekend_id"] == entry["weekend_id"]
+                               and not (in_race and e["session_type"] in QUALIFYING_LIKE)],
                    "prediction": predict_quali(entry, store) if entry["session_type"] in PRACTICE else None}
     res["digest_cached"] = cached
     weekend = sorted([e for e in store if e["weekend_id"] == entry["weekend_id"] and e["track_id"] == entry["track_id"]],
@@ -316,7 +322,8 @@ def run(folder, out_dir=DEFAULT_OUT, pace_store=PACE_STORE, digest_path=None):
         prev_dig = dg
     res["attempts"] = attempts
     # compare with the last session of a DIFFERENT type this weekend (e.g. FP1), if its digest is saved
-    earlier = [e for e in weekend if e["folder"] < entry["folder"] and e["session_type"] != entry["session_type"]]
+    earlier = [e for e in weekend if e["folder"] < entry["folder"] and e["session_type"] != entry["session_type"]
+               and (not in_race or e["session_type"] in PRACTICE)]
     if earlier:
         p = earlier[-1]
         prev = load_saved_digest(parsed.parent.parent / p["folder"])

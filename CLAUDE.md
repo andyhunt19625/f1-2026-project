@@ -51,6 +51,7 @@ This file exists because sessions on the PC lose their memory when the PC restar
 - Andy's races are always set to 35% distance: Australia race = 20 laps (35% of the real 58 laps = 20.3), China sprint = 7 laps.
   Reports show start fuel for sprints of 5-10 laps and races of 15-30 laps (race_engineer/fuel_config.json). China dry burn
   measured 1.164 kg/lap (FP1 + sprint shootout laps, fuel mix 1); no wet China figure yet.
+- Race reports are compared with practice runs and the AI only, never with qualifying or sprint shootout laps (Andy's rule).
 - A car retiring makes `numActiveCars` drop mid-race; never rebuild per-car data when it changes.
 - AI setups are generic; AI pace comes mostly from the AI difficulty setting.
 
