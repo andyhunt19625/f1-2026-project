@@ -154,6 +154,7 @@ def acceleration(corners, you, ai):
     if not corners or not you or not ai:
         return {"id": "acceleration", "title": "Acceleration points", "available": False, "note": "no AI lap to compare with"}
     ys, as_ = clean_series(you["samples"]), clean_series(ai["samples"])
+    yz, az = brake_zones(you["samples"]), brake_zones(ai["samples"])
     yv, av = [(s[0], s[2]) for s in ys], [(s[0], s[2]) for s in as_]
     length = max(ys[-1][0], as_[-1][0]) if ys and as_ else 0
     at = lambda series, d: None if d is None else (lambda v: None if v is None else round(v))(_interp(series, min(d, length), 1))
@@ -164,17 +165,23 @@ def acceleration(corners, you, ai):
         if not yf and not tf:
             continue
         ref = y.get("apex_at_m") or t.get("apex_at_m")
+        # a speed read inside the NEXT braking zone is not an exit speed: leave it out (short gaps between corners)
+        nxt = [min((z["start"] for z in zones if z["start"] > ref + 5), default=None) for zones in (yz, az)] if ref else []
+        nxt = [n for n in nxt if n is not None]
+        limit = min(nxt) - 10 if nxt else None
+        ok = lambda k: bool(ref) and (limit is None or ref + k <= limit)
         items.append({"corner": c["corner"], "type": c["type"], "you_m": yf, "ai_m": tf,
                       "diff_m": (yf - tf) if yf and tf else None, "you_apex_kmh": y.get("apex_speed"),
                       "ai_apex_kmh": t.get("apex_speed"), "ref_m": ref,
-                      "you_150_kmh": at(yv, ref + 150) if ref else None, "ai_150_kmh": at(av, ref + 150) if ref else None,
-                      "you_300_kmh": at(yv, ref + 300) if ref else None, "ai_300_kmh": at(av, ref + 300) if ref else None})
+                      "you_150_kmh": at(yv, ref + 150) if ok(150) else None, "ai_150_kmh": at(av, ref + 150) if ok(150) else None,
+                      "you_300_kmh": at(yv, ref + 300) if ok(300) else None, "ai_300_kmh": at(av, ref + 300) if ok(300) else None})
     if not items:
         return {"id": "acceleration", "title": "Acceleration points", "available": False, "note": "no corner exits found"}
     return {"id": "acceleration", "title": "Acceleration points", "kind": "markers", "available": True, "items": items,
             "explain": "Where full throttle is reached after each corner (a negative difference means you are on full throttle "
                        "earlier than the AI), and both laps' speed at the same places 150 m and 300 m after your apex. "
-                       "Reaching full throttle earlier is not the same as leaving the corner faster."}
+                       "A dash means the next braking zone starts before that point. Reaching full throttle earlier is not the same as leaving "
+                       "the corner faster."}
 
 
 def build(you, ai, ai_active, corners, length):

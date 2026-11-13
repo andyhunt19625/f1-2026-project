@@ -79,6 +79,17 @@ class LayerTests(unittest.TestCase):
         self.assertIsNotNone(it["you_150_kmh"])
         self.assertFalse(report_layers.acceleration([], lap(), lap())["available"])
 
+    def test_exit_speed_is_left_out_when_the_next_braking_zone_comes_first(self):
+        corners = [{"corner": 1, "type": "slow", "you": {"apex_speed": 90, "apex_at_m": 460, "full_throttle_at_m": 600},
+                    "them": {"apex_speed": 92, "apex_at_m": 462, "full_throttle_at_m": 630}}]
+        y, a = lap(full_at=600), lap(full_at=630)
+        for l in (y, a):                       # a second braking zone at 700-730 m on both laps
+            l["samples"] = [(d, t, sp, th, 0.8 if 700 <= d < 730 else b, g, st) for d, t, sp, th, b, g, st in l["samples"]]
+        it = report_layers.acceleration(corners, y, a)["items"][0]
+        self.assertIsNotNone(it["you_150_kmh"])                 # 610 m is before the zone at 700 m
+        self.assertIsNone(it["you_300_kmh"])                    # 760 m is after it
+        self.assertIsNone(it["ai_300_kmh"])
+
     def test_build_all(self):
         out = report_layers.build(lap(), lap(), lap(), [], LENGTH)
         self.assertEqual(sorted(out), ["acceleration", "battery", "braking", "fuel", "tyres"])
