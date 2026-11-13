@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude-code-remote__send_message",
+      "mcp__claude-code-remote__list_events",
+      "mcp__claude-code-remote__get_event",
+      "mcp__claude-code-remote__get_session",
+      "mcp__claude-code-remote__list_sessions",
+      "mcp__claude-code-remote__list_environments",
+      "mcp__claude-code-remote__read_documentation",
+      "Bash(sleep:*)",
+      "Bash(python3 -m unittest:*)",
+      "Bash(python3 -m race_engineer:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}

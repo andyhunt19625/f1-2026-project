@@ -1,5 +1,6 @@
 __pycache__/
-.claude/
+.claude/*
+!.claude/settings.json
 backups/
 run/
 laps_cache.pkl.gz
