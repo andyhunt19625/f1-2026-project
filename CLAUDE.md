@@ -51,6 +51,15 @@ This file exists because sessions on the PC lose their memory when the PC restar
 - A car retiring makes `numActiveCars` drop mid-race; never rebuild per-car data when it changes.
 - AI setups are generic; AI pace comes mostly from the AI difficulty setting.
 
+## How the reports work with no Claude involved
+- When F1 25 starts, the watcher runs `control on`: capture, engineer, report watcher (`auto_report`) and the iPad page
+  (`reports_lan`, port 8780, read-only, secret code in the address, run\reports_token.txt; Windows firewall rule
+  "F1 reports (iPad)", Private network, local subnet only; Andy approved this himself).
+- The engineer keeps a digest of the session (saved after every lap and when the session ends). The report watcher builds
+  the report from it in seconds into `D:\RealF1-esports\reports\` and `http://127.0.0.1:8777/reports/latest` shows it.
+- `control off` (also run when the game closes) stops the engineer cleanly first (stop file `run\engineer.stop`, because
+  Windows cannot deliver SIGTERM), waits for the last report, then stops the rest. Keep that order.
+
 ## After a PC restart
 Remote Control comes back as a NEW session with no memory. Andy's cloud session ("Race Engineer") finds it by its environment
 name starting `FBI:`. Nothing has to be turned on by hand: capture and the engineer start only when told (`control on`).

@@ -250,14 +250,30 @@ def cmd_on(args):
     return cmd_status(args)
 
 
+ENGINEER_STOP = RUN_DIR / "engineer.stop"
+
+
 def stop_engineer():
+    """Ask the engineer to stop cleanly (it saves the session digest and marks it finished, so the
+    last report is built); only if it does not, stop it by force."""
     pid = engineer_pid()
     if not pid:
         return True, "Engineer: was not running."
+    RUN_DIR.mkdir(exist_ok=True)
+    ENGINEER_STOP.write_text("stop")
+    if wait_for(lambda: engineer_pid() is None, 10):
+        return True, "Engineer: stopped."
+    ENGINEER_STOP.unlink(missing_ok=True)
     os.kill(pid, signal.SIGTERM)
     if wait_for(lambda: engineer_pid() is None, 6):
-        return True, "Engineer: stopped."
+        return True, "Engineer: stopped (by force)."
     return False, f"Engineer (pid {pid}) did not stop in time."
+
+
+def wait_reports_built(seconds=40):
+    """Give the report watcher time to build the report for any session just marked finished."""
+    from .auto_report import LIVE
+    wait_for(lambda: not list(Path(LIVE).glob("*.done")) if Path(LIVE).is_dir() else True, seconds)
 
 
 def cmd_restart_engineer(args):
@@ -283,13 +299,14 @@ def cmd_off(args):
               f"{ACTIVE_WITHIN_S} seconds, so a race may be in progress. Not stopping. "
               "Run 'off --force' only if you are sure.")
         return 1
-    print(stop_auto())
-    print(stop_lan())
-    ok, msg = stop_engineer()
+    ok, msg = stop_engineer()           # first: it marks the finished session
     print(msg)
     if not ok:
         print("Capture left running.")
         return 1
+    wait_reports_built()                # the report watcher builds that session's report (seconds)
+    print(stop_auto())
+    print(stop_lan())
     if capture_state() == "active":
         ok, msg = stop_capture()
         if not ok or not wait_for(lambda: capture_state() != "active", 8):

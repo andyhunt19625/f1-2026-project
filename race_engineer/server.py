@@ -19,6 +19,7 @@ import argparse
 import json
 import signal
 import threading
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -30,6 +31,24 @@ from .tools import (DEFAULT_BUFFER_S, ToolError, damage_status, gap_to, pit_loss
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8777
+
+
+STOP_FILE = Path(__file__).resolve().parent.parent / "run" / "engineer.stop"
+
+
+def watch_stop_file(path, on_stop, stopped, interval=0.5):
+    """Call on_stop() once when `path` appears (and delete it)."""
+    def loop():
+        while not stopped.is_set():
+            if path.exists():
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+                on_stop()
+                return
+            stopped.wait(interval)
+    threading.Thread(target=loop, daemon=True).start()
 
 
 def _float(q, key, default):
@@ -162,7 +181,6 @@ def main(argv=None):
                     help="per-circuit pit data file (default run/circuit_data.json; 'none' = do not store)")
     a = ap.parse_args(argv)
 
-    from pathlib import Path
     from .circuit_store import DEFAULT as STORE
     store = None if a.circuit_store == "none" else Path(a.circuit_store) if a.circuit_store else STORE
     from .live_laps import LIVE_DIGESTS
@@ -178,8 +196,12 @@ def main(argv=None):
 
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
+    # Windows cannot deliver SIGTERM (it kills the process outright), so `control` asks for a clean stop
+    # by creating this file. A clean stop saves the session digest and marks it finished first.
+    watch_stop_file(STOP_FILE, shutdown, stop)
     print(f"engineer: live feed on 127.0.0.1:{feed.port}, questions on http://{a.host}:{a.port}", flush=True)
     httpd.serve_forever()
+    state.end_session()          # session digest saved and marked finished, so its report is built
     feed.stop()
     print("engineer: stopped", flush=True)
 

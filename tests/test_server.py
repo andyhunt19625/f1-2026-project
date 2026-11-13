@@ -95,6 +95,22 @@ class ServerTests(unittest.TestCase):
         self.assertIn("not running", d["error"])
 
 
+class StopFileTests(unittest.TestCase):
+    def test_stop_file_triggers_one_clean_stop_and_is_removed(self):
+        from race_engineer.server import watch_stop_file
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "engineer.stop"
+            hit, stopped = threading.Event(), threading.Event()
+            watch_stop_file(f, hit.set, stopped, interval=0.05)
+            time.sleep(0.15)
+            self.assertFalse(hit.is_set())
+            f.write_text("stop")
+            self.assertTrue(hit.wait(2))
+            time.sleep(0.1)
+            self.assertFalse(f.exists())
+            stopped.set()
+
+
 class LiveBindTests(unittest.TestCase):
     def test_second_listener_on_same_port_fails_loudly(self):
         class P:  # parser is not used for binding
