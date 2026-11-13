@@ -29,7 +29,9 @@ This file exists because sessions on the PC lose their memory when the PC restar
 
 ## Commands you will need
 - `python -m race_engineer.control on | off [--force] | status | restart-engineer`   (capture + engineer; `off` refuses mid-session unless `--force`)
-- `python -m race_engineer.ask status | gap <driver> | tyres | damage | pit | pitloss | weather | field | lap | laps | aideploy | reminders`
+- `python -m race_engineer.ask status | gap <driver> | tyres | damage | pit | pitloss | weather | field | lap | laps | aideploy | reminders | lose [ai] | deploymore [ai] | deploy`
+  (coaching, `coach.py`: where am I losing time with the usual fix, where to deploy more, deploy now or hold; corners are named by
+  braking-zone order and metres, not the game's turn numbers; the fixes are rules of thumb)
 - Saved session analysis: `python -m race_engineer.report <parsed.jsonl>` (laps + faster-car comparison; saves `laps_cache.pkl.gz`),
   `ers_analysis`, `track_map`, `lap_analysis`, `compare`, `session_debug`.
 - Test: `python -m unittest discover -s tests` (temp folders and random ports; safe while capture runs).
