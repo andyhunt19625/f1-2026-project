@@ -66,14 +66,17 @@ class LayerTests(unittest.TestCase):
         self.assertEqual(len(items), 2)
         self.assertIsNone(items[1]["you_m"])
 
-    def test_acceleration_points(self):
-        corners = [{"corner": 1, "type": "slow", "you": {"apex_speed": 90, "full_throttle_at_m": 600},
-                    "them": {"apex_speed": 92, "full_throttle_at_m": 630}}]
+    def test_acceleration_points_compare_speeds_at_the_same_track_positions(self):
+        corners = [{"corner": 1, "type": "slow", "you": {"apex_speed": 90, "apex_at_m": 460, "full_throttle_at_m": 600},
+                    "them": {"apex_speed": 92, "apex_at_m": 462, "full_throttle_at_m": 630}}]
         L = report_layers.acceleration(corners, lap(full_at=600), lap(full_at=630))
         it = L["items"][0]
         self.assertEqual((it["you_m"], it["ai_m"], it["diff_m"]), (600, 630, -30))      # you are on full throttle 30 m earlier
-        self.assertEqual(it["you_apex_kmh"], 90)
-        self.assertIsNotNone(it["you_exit_kmh"])
+        self.assertEqual(it["ref_m"], 460)
+        # both laps are read at 610 m and 760 m (apex + 150 / + 300), whatever each lap's own throttle point was
+        self.assertEqual(it["you_150_kmh"], it["ai_150_kmh"])
+        self.assertEqual(it["you_300_kmh"], it["ai_300_kmh"])
+        self.assertIsNotNone(it["you_150_kmh"])
         self.assertFalse(report_layers.acceleration([], lap(), lap())["available"])
 
     def test_build_all(self):

@@ -192,7 +192,7 @@ function showMarkers(L, kind) {
     const a = it.you_m != null ? GEO.at(it.you_m) : null, b = it.ai_m != null ? GEO.at(it.ai_m) : null;
     const text = brake
       ? `<b>Braking zone ${i + 1}</b> · you start at ${it.you_m ?? "–"} m, AI at ${it.ai_m ?? "–"} m${it.diff_m != null ? ` (you ${it.diff_m > 0 ? "later" : it.diff_m < 0 ? "earlier" : "level"} by ${Math.abs(it.diff_m)} m)` : ""} · entry speed ${it.you_entry_kmh ?? "–"} / ${it.ai_entry_kmh ?? "–"} km/h · peak brake ${it.you_peak_pct ?? "–"} / ${it.ai_peak_pct ?? "–"} %`
-      : `<b>Corner ${it.corner} (${it.type})</b> · full throttle at ${it.you_m ?? "–"} m (you) vs ${it.ai_m ?? "–"} m (AI)${it.diff_m != null ? ` (you ${it.diff_m < 0 ? "earlier" : it.diff_m > 0 ? "later" : "level"} by ${Math.abs(it.diff_m)} m)` : ""} · speed 100 m later ${it.you_exit_kmh ?? "–"} / ${it.ai_exit_kmh ?? "–"} km/h`;
+      : `<b>Corner ${it.corner} (${it.type})</b> · full throttle at ${it.you_m ?? "–"} m (you) vs ${it.ai_m ?? "–"} m (AI)${it.diff_m != null ? ` (you ${it.diff_m < 0 ? "earlier" : it.diff_m > 0 ? "later" : "level"} by ${Math.abs(it.diff_m)} m)` : ""} · speed 150 m / 300 m after your apex: you ${it.you_150_kmh ?? "–"} / ${it.you_300_kmh ?? "–"}, AI ${it.ai_150_kmh ?? "–"} / ${it.ai_300_kmh ?? "–"} km/h`;
     const g = el("g", {tabindex: 0, class: "seg"}); const show = () => { tip.innerHTML = text; };
     ["mouseenter", "click", "focus"].forEach(ev => g.addEventListener(ev, show));
     if (a && b) g.appendChild(el("line", {x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: "var(--fg)", "stroke-width": 3 * scale}));
@@ -208,8 +208,8 @@ function showMarkers(L, kind) {
     T("layerA", ["Zone", "You start", "AI starts", "Difference", "Entry speed you / AI", "Peak brake you / AI"], L.items.map((it, i) =>
       [i + 1, it.you_m ?? "–", it.ai_m ?? "–", d(it.diff_m), `${it.you_entry_kmh ?? "–"} / ${it.ai_entry_kmh ?? "–"}`, `${it.you_peak_pct ?? "–"} / ${it.ai_peak_pct ?? "–"} %`]));
   } else {
-    T("layerA", ["Corner", "Apex speed you / AI", "Full throttle you / AI", "Difference", "Speed 100 m later you / AI"], L.items.map(it =>
-      [`${it.corner} (${it.type})`, `${it.you_apex_kmh ?? "–"} / ${it.ai_apex_kmh ?? "–"}`, `${it.you_m ?? "–"} / ${it.ai_m ?? "–"} m`, d(it.diff_m), `${it.you_exit_kmh ?? "–"} / ${it.ai_exit_kmh ?? "–"}`]));
+    T("layerA", ["Corner", "Apex speed you / AI", "Full throttle you / AI", "Difference", "150 m after apex you / AI", "300 m after apex you / AI"], L.items.map(it =>
+      [`${it.corner} (${it.type})`, `${it.you_apex_kmh ?? "–"} / ${it.ai_apex_kmh ?? "–"}`, `${it.you_m ?? "–"} / ${it.ai_m ?? "–"} m`, d(it.diff_m), `${it.you_150_kmh ?? "–"} / ${it.ai_150_kmh ?? "–"}`, `${it.you_300_kmh ?? "–"} / ${it.ai_300_kmh ?? "–"}`]));
   }
   document.getElementById("layerB").innerHTML = "";
 }
