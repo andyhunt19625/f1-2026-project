@@ -21,7 +21,7 @@ from .session_reader import lap_label
 ROOT = Path(__file__).resolve().parent.parent
 PACE_STORE = ROOT / "run" / "pace_store.json"
 DEFAULT_OUT = ROOT.parent / "reports"
-TRACKS = {0: "Melbourne"}          # only names seen in Andy's data
+TRACKS = {0: "Melbourne", 2: "Shanghai"}   # only tracks seen in Andy's data (2: China P1, 13 Nov 2026)
 SESSION_NAMES = {1: "Practice 1", 2: "Practice 2", 3: "Practice 3", 4: "Short practice", 5: "Qualifying 1",
                  6: "Qualifying 2", 7: "Qualifying 3", 8: "Short qualifying", 9: "One-shot qualifying",
                  15: "Race", 16: "Race 2", 17: "Race 3", 18: "Time trial"}

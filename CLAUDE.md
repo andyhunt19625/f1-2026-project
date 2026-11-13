@@ -40,7 +40,7 @@ This file exists because sessions on the PC lose their memory when the PC restar
 - Reading a multi-GB `parsed.jsonl` while capture is writing slows both (a 2 minute analysis took 16 minutes once). Prefer to analyse when capture is off or idle.
 
 ## Verified facts (from Andy's real sessions, 12 Nov 2026)
-- Australia = `trackId` 0, length 5276 m. `sessionType` seen: 1 (practice 1), 3 (practice 3), 4 (wet practice), 8 (qualifying), 15 (race), 18 (time trial).
+- Australia = `trackId` 0, length 5276 m. China (Shanghai) = `trackId` 2. Session folder names end with the session UID as 16 lowercase hex digits (`udp_capture.py`). `sessionType` seen: 1 (practice 1), 3 (practice 3), 4 (wet practice), 8 (qualifying), 15 (race), 18 (time trial).
 - Your car is the participant with `aiControlled == 0`. After a garage visit the lap number continues and the lap restarts at the line under the same number (`driverStatus` 1 = flying lap).
 - The game sends fixed battery values (store 4.00 MJ, nothing deployed or harvested) for some AI cars; the tools leave those laps out.
 - ERS deploy mode, as recorded on Andy's laps: 0 = none, 1 = medium, 2 = hotlap, 3 = overtake (0 matched his account of the pole lap; the others are the spec's names).
