@@ -44,10 +44,10 @@ def latest(folder):
     return rows[0]["name"] if rows else None
 
 
-def index_html(folder):
+def index_html(folder, base="/reports"):
     rows = list_reports(folder)
     body = "".join(
-        f'<tr><td><a href="/reports/{html.escape(r["name"])}">{html.escape(r["session"])}'
+        f'<tr><td><a href="{html.escape(base)}/{html.escape(r["name"])}">{html.escape(r["session"])}'
         f'{" (attempt %s of %s)" % (r["attempt"], r["of"]) if r.get("of") and r["of"] > 1 else ""}</a></td>'
         f'<td>{html.escape(r["track"])}</td><td>{_ms(r["you"])}</td>'
         f'<td class="{"g" if r["gap"] is not None and r["gap"] <= 0 else "l"}">'
@@ -65,7 +65,7 @@ table{{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}}
 th,td{{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}} th{{color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em}}
 a{{color:var(--accent);font-weight:600}} .g{{color:var(--gain)}} .l{{color:var(--loss)}} .m{{color:var(--muted);font-size:.85rem}}
 </style></head><body><main><h1>Session reports</h1>
-<p>Newest first. The gap is your best lap against the best AI lap (minus = you were quicker). <a href="/reports/latest">Open the latest</a></p>
+<p>Newest first. The gap is your best lap against the best AI lap (minus = you were quicker). <a href="{html.escape(base)}/latest">Open the latest</a></p>
 <div class="t"><table><tr><th>Session</th><th>Track</th><th>Your best</th><th>vs best AI</th><th>Recorded (UTC)</th></tr>{body}</table></div>
 </main></body></html>"""
 

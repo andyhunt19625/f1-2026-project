@@ -36,6 +36,8 @@ CAPTURE_OUT = RUN_DIR / "capture.out"
 AUTO_PID = RUN_DIR / "auto_report.pid"
 AUTO_OUT = RUN_DIR / "auto_report.out"
 AUTO_STOP = RUN_DIR / "auto_report.stop"
+LAN_PID = RUN_DIR / "reports_lan.pid"
+LAN_OUT = RUN_DIR / "reports_lan.out"
 STOP_FILE = CAPTURE_DIR / "STOP"                       # udp_capture.py (PC copy) exits cleanly when this exists
 WIN_DETACHED = 0x00000008 | 0x00000200                  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
 WIN_BREAKAWAY = 0x01000000                              # CREATE_BREAKAWAY_FROM_JOB
@@ -186,6 +188,30 @@ def stop_auto():
     return f"Auto report (pid {pid}) is finishing a report and will stop after it."
 
 
+def lan_pid(runner=_run):
+    return _pid_running(LAN_PID, "race_engineer.reports_lan", runner)
+
+
+def start_lan():
+    """Read-only reports page for the iPad on the home wifi (reports_lan.py)."""
+    if lan_pid():
+        return f"iPad reports: already running (pid {lan_pid()})."
+    proc = _spawn([sys.executable, "-m", "race_engineer.reports_lan", "run"], ROOT, LAN_OUT)
+    LAN_PID.write_text(str(proc.pid))
+    return f"iPad reports: started (pid {proc.pid})."
+
+
+def stop_lan():
+    pid = lan_pid()
+    if not pid:
+        return "iPad reports: was not running."
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass
+    return "iPad reports: stopped." if wait_for(lambda: lan_pid() is None, 6) else "iPad reports: did not stop in time."
+
+
 def log_tail(n=8):
     try:
         return "\n".join(LOGFILE.read_text(errors="replace").splitlines()[-n:])
@@ -220,6 +246,7 @@ def cmd_on(args):
             return 1
         print(f"Engineer: started (pid {pid}).")
     print(start_auto())
+    print(start_lan())
     return cmd_status(args)
 
 
@@ -257,6 +284,7 @@ def cmd_off(args):
               "Run 'off --force' only if you are sure.")
         return 1
     print(stop_auto())
+    print(stop_lan())
     ok, msg = stop_engineer()
     print(msg)
     if not ok:
@@ -294,6 +322,8 @@ def cmd_status(args):
     print(f"Engineer: {'running (pid %d)' % pid if pid else 'not running'}")
     ap_ = auto_pid()
     print(f"Auto report: {'running (pid %d)' % ap_ if ap_ else 'not running'}")
+    lp = lan_pid()
+    print(f"iPad reports: {'running (pid %d)' % lp if lp else 'not running'}")
     ports = listening()
     word = {True: "yes", False: "no", None: "unknown (port check not available)"}
     print(f"Listening: capture port 20777 {word[ports[20777]]}, engineer port 20778 {word[ports[20778]]}")
