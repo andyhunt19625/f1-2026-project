@@ -22,13 +22,15 @@ def folder(root, name, mb, age_s):
 class AutoReportTests(unittest.TestCase):
     def test_only_new_finished_big_unreported_sessions(self):
         with tempfile.TemporaryDirectory() as d:
-            folder(d, "20261112T100000Z_old", 100, 3600)        # before auto-report started
+            folder(d, "20261112T100000Z_old", 100, 7200)        # finished before auto-report started
             folder(d, "20261113T160000Z_live", 100, 5)          # still being written
             folder(d, "20261113T160500Z_menu", 1, 600)          # menu stub
             folder(d, "20261113T161000Z_done", 100, 600)        # already reported
             folder(d, "20261113T162000Z_new", 100, 600)         # the one to report
-            state = {"since": "20261113T150000Z", "done": {"20261113T161000Z_done": "ok"}}
-            self.assertEqual([f.name for f in auto_report.candidates(state, d)], ["20261113T162000Z_new"])
+            folder(d, "20261113T152613Z_china", 100, 300)       # started BEFORE the watcher, finished after
+            state = {"since_epoch": time.time() - 3600, "done": {"20261113T161000Z_done": "ok"}}
+            self.assertEqual([f.name for f in auto_report.candidates(state, d)],
+                             ["20261113T152613Z_china", "20261113T162000Z_new"])
 
     def test_tick_runs_report_records_result_and_latest(self):
         with tempfile.TemporaryDirectory() as d:
@@ -41,7 +43,7 @@ class AutoReportTests(unittest.TestCase):
                 if cmd[-1].endswith("_b"):
                     return False, "Traceback: boom"
                 return True, "Race at Melbourne\nReport: D:\\reports\\20261113T162000Z_a.html\n"
-            state = {"since": "20261113T150000Z"}
+            state = {"since_epoch": time.time() - 3600}
             with mock.patch.object(auto_report, "RUN", Path(d) / "run"), \
                  mock.patch.object(auto_report, "LATEST", Path(d) / "run" / "latest.txt"), \
                  mock.patch.object(auto_report, "LOG", Path(d) / "run" / "log.txt"):

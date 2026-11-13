@@ -4,7 +4,7 @@
   python -m race_engineer.auto_report status
 
 Every POLL_S seconds it looks in sessions\\ for folders that
-- were recorded after auto-report was first switched on (it never works through old sessions by itself),
+- were still being written after auto-report was first switched on (it never works through old sessions by itself),
 - have a parsed.jsonl of at least MIN_MB, and
 - have not been written to for QUIET_S seconds (the session is over),
 and that have no report yet. For each, oldest first, it runs `session_report` in a separate low-priority
@@ -53,14 +53,21 @@ def save_state(state, path=STATE):
 def candidates(state, sessions=SESSIONS, now=None, quiet_s=QUIET_S, min_mb=MIN_MB):
     """Finished, unreported session folders recorded since auto-report started, oldest first."""
     now = time.time() if now is None else now
-    since = state.get("since", "")
+    since = state.get("since_epoch")
+    if since is None and state.get("since"):        # older state files: folder-name time only
+        since = datetime.strptime(state["since"][:16], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc).timestamp()
     done = state.get("done", {})
     out = []
     for f in sorted(Path(sessions).iterdir()) if Path(sessions).is_dir() else []:
         p = f / "parsed.jsonl"
-        if not f.is_dir() or f.name[:16] < since or f.name in done or not p.is_file():
+        if not f.is_dir() or f.name in done or not p.is_file():
             continue
         st = p.stat()
+        # A session counts if it was still being written after auto-report started. (It used to be
+        # "started after", which skipped China Practice 1 on 13 Nov 2026: recording began at 15:26,
+        # the watcher at 16:02, the session ended at 16:17.)
+        if since is not None and st.st_mtime < since:
+            continue
         if st.st_size >= min_mb * 1e6 and now - st.st_mtime >= quiet_s:
             out.append(f)
     return out
@@ -101,8 +108,9 @@ def tick(state, runner=None, sessions=SESSIONS, now=None):
 
 def run():
     state = load_state()
-    if not state.get("since"):
-        state["since"] = _now()[:16]       # only sessions recorded from now on
+    if not state.get("since") and not state.get("since_epoch"):
+        state["since"] = _now()[:16]       # only sessions still being written from now on
+        state["since_epoch"] = time.time()
         save_state(state)
     log(f"auto-report started; reporting sessions recorded since {state['since']}")
     while not STOP.exists():
@@ -127,7 +135,7 @@ def main(argv=None):
         run()
     else:
         s = load_state()
-        print(f"Reporting sessions recorded since {s.get('since', '(not started yet)')}.")
+        print(f"Reporting sessions still being written after {s.get('since', '(not started yet)')}.")
         for k, v in sorted(s.get("done", {}).items())[-10:]:
             print(f"  {k}: {v}")
         if LATEST.is_file():
