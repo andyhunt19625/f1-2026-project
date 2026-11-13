@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Session Report</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column; summary line, then the track map as the hero, then the gain/loss table. */
+:root{
+  --bg:#f3f5f7; --panel:#ffffff; --fg:#14181d; --muted:#5d6874; --line:#d5dbe1;
+  --gain:#0f9d58; --loss:#d93025; --flat:#9aa5b1; --accent:#1f5fbf;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1216; --panel:#161b21; --fg:#e8edf2; --muted:#94a0ad; --line:#2a323b;
+  --gain:#34c77b; --loss:#ff5f52; --flat:#5f6b77; --accent:#6aa3ff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1216; --panel:#161b21; --fg:#e8edf2; --muted:#94a0ad; --line:#2a323b;
+  --gain:#34c77b; --loss:#ff5f52; --flat:#5f6b77; --accent:#6aa3ff; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:980px;margin:0 auto;display:grid;gap:20px}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(2rem,5vw,2.8rem);line-height:1;margin:0;letter-spacing:.01em;text-wrap:balance}
+.eyebrow{font-family:var(--mono);font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.times{display:flex;flex-wrap:wrap;gap:12px 28px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.times div{display:grid}
+.times b{font-family:var(--display);font-size:1.7rem;font-weight:600;line-height:1.1}
+.times .g b{color:var(--gain)}
+.map{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;gap:10px}
+svg{width:100%;height:auto;display:block;touch-action:manipulation}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:.85rem;color:var(--muted);align-items:center}
+.sw{display:inline-block;width:22px;height:6px;border-radius:3px;vertical-align:middle;margin-right:6px}
+.tip{font-family:var(--mono);font-size:.85rem;min-height:2.6em;color:var(--fg);font-variant-numeric:tabular-nums}
+.note{font-size:.85rem;color:var(--muted);max-width:68ch}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
+.cols > section{min-width:0}
+h2{font-family:var(--display);font-weight:600;font-size:1.35rem;margin:0 0 6px;letter-spacing:.02em}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:.82rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:6px 6px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:500;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase}
+td.n{text-align:right}
+tr{cursor:pointer}
+tr:hover td,tr.on td{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.gain{color:var(--gain)} .loss{color:var(--loss)}
+.seg{cursor:pointer}
+.seg:focus{outline:none}
+.km{font-family:var(--mono);fill:var(--fg);paint-order:stroke;stroke:var(--panel);stroke-width:4px}
+@media (prefers-reduced-motion:no-preference){.seg{transition:stroke-width .15s}}
+
+section.block{display:grid;gap:8px}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kv div{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;display:grid;gap:2px}
+.kv b{font-family:var(--display);font-size:1.4rem;font-weight:600}
+.muted{color:var(--muted)} .tbl{overflow-x:auto}
+</style>
+</head><body>
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <div class="eyebrow" id="eyebrow"></div>
+    <h1 id="h1"></h1>
+    <div class="times" id="times"></div>
+  </header>
+  <div class="map" id="mapbox">
+    <svg id="map" role="img" aria-label="Track map coloured by time gained or lost against the best AI lap in each 100 metres"></svg>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--gain)"></span>You quicker than the AI</span>
+      <span><span class="sw" style="background:var(--loss)"></span>You slower than the AI</span>
+      <span><span class="sw" style="background:var(--flat)"></span>Within 0.010 s</span>
+      <span>Thicker = bigger difference</span>
+    </div>
+    <div class="tip" id="tip">Tap or hover a section of track for its numbers.</div>
+  </div>
+  <div class="cols">
+    <section class="block"><h2>By type of track</h2><div class="tbl"><table id="types"></table></div></section>
+    <section class="block"><h2>Corners: you vs the AI</h2><div class="tbl"><table id="corners"></table></div></section>
+  </div>
+  <div class="cols">
+    <section class="block"><h2>Setup: you vs the AI</h2><div class="tbl"><table id="setup"></table></div><p class="note" id="rot"></p></section>
+    <section class="block"><h2>Battery on your best lap</h2><div class="tbl"><table id="battery"></table></div></section>
+  </div>
+  <section class="block"><h2>AI pace this weekend</h2><div class="tbl"><table id="pace"></table></div><p class="note" id="pred"></p></section>
+  <div class="cols">
+    <section class="block"><h2>Race events</h2><div class="tbl"><table id="events"></table></div></section>
+    <section class="block"><h2>Fuel at the start of each lap</h2><div class="tbl"><table id="fuel"></table></div></section>
+  </div>
+  <p class="note" id="foot"></p>
+</div>
+<script>
+const D = __DATA__;
+const fmt = ms => { if (ms == null) return "–"; const m = Math.floor(ms/60000), s = (ms%60000)/1000; return m+":"+s.toFixed(3).padStart(6,"0"); };
+const sgn = (ms, d=3) => (ms > 0 ? "+" : ms < 0 ? "−" : "") + (Math.abs(ms)/1000).toFixed(d) + " s";
+const T = (id, head, rows) => { document.getElementById(id).innerHTML = "<tr>" + head.map(h => `<th>${h}</th>`).join("") + "</tr>" + (rows.length ? rows.map(r => "<tr>" + r.map(c => `<td>${c ?? "–"}</td>`).join("") + "</tr>").join("") : `<tr><td colspan="${head.length}" class="muted">No data</td></tr>`); };
+document.title = `${D.track} ${D.session} Report`;
+document.getElementById("eyebrow").textContent = `${D.track} · ${D.session} · ${D.conditions} · ${D.folder}`;
+if (D.error) { document.getElementById("h1").textContent = D.error; }
+else {
+  const gap = D.ai_ms != null ? D.your_ms - D.ai_ms : null;
+  document.getElementById("h1").textContent = gap == null ? `Your best: ${fmt(D.your_ms)}` :
+    (gap <= 0 ? `${(-gap/1000).toFixed(3)} s quicker than the best AI` : `${(gap/1000).toFixed(3)} s off the best AI`);
+  document.getElementById("times").innerHTML =
+    `<div><span class="eyebrow">Your best (${D.your_lap})</span><b>${fmt(D.your_ms)}</b></div>` +
+    (D.ai_ms != null ? `<div><span class="eyebrow">Best AI: ${D.ai.charAt(0)+D.ai.slice(1).toLowerCase()} (${D.ai_lap})</span><b>${fmt(D.ai_ms)}</b></div>` +
+      `<div class="${gap <= 0 ? "g" : ""}"><span class="eyebrow">Difference</span><b>${sgn(gap)}</b></div>` : "");
+}
+// ---- map
+const P = D.points || [], S = D.segments || [];
+if (P.length > 10 && S.length) {
+  let area = 0; for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i+1)%P.length]; area += a[1]*b[2] - b[1]*a[2]; }
+  const sx = area < 0 ? -1 : 1, xs = P.map(p => sx*p[1]), ys = P.map(p => p[2]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const pad = 110, W = maxX-minX, H = maxY-minY, svg = document.getElementById("map"), NS = "http://www.w3.org/2000/svg";
+  svg.setAttribute("viewBox", `${minX-pad} ${minY-pad} ${W+2*pad} ${H+2*pad}`);
+  const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+  const scale = Math.max(W, H) / 600;
+  svg.appendChild(el("polyline", {points: P.map((p,i) => xs[i]+","+ys[i]).join(" ") + " " + xs[0]+","+ys[0], fill: "none", stroke: "var(--line)", "stroke-width": 16*scale, "stroke-linejoin": "round", "stroke-linecap": "round"}));
+  const tip = document.getElementById("tip"), segEls = [];
+  const show = i => { const s = S[i], g = s.gain_ms;
+    const what = Math.abs(g) < 10 ? "about level" : (g > 0 ? `you ${(g/1000).toFixed(3)} s quicker` : `AI ${(-g/1000).toFixed(3)} s quicker`);
+    tip.innerHTML = `<b>${s.from_m}–${s.to_m} m</b> · ${what} · min speed you ${s.you_min_kmh} km/h vs AI ${s.ai_min_kmh} km/h`;
+    segEls.forEach((e, j) => e && e.setAttribute("stroke-width", (j === i ? 1.6 : 1) * +e.dataset.w)); };
+  S.forEach((s, i) => { const pts = []; for (let k = 0; k < P.length; k++) if (P[k][0] >= s.from_m && P[k][0] < s.to_m) pts.push(k);
+    if (!pts.length) return; const last = pts[pts.length-1]; pts.push(last + 1 < P.length ? last + 1 : 0);
+    const g = s.gain_ms, mag = Math.min(Math.abs(g), 200)/200, w = (5 + 9*mag)*scale;
+    const line = el("polyline", {points: pts.map(k => xs[k]+","+ys[k]).join(" "), fill: "none", stroke: Math.abs(g) < 10 ? "var(--flat)" : (g > 0 ? "var(--gain)" : "var(--loss)"), "stroke-width": w, "stroke-linecap": "round", "stroke-linejoin": "round", class: "seg", tabindex: 0});
+    line.dataset.w = w; ["mouseenter","click","focus"].forEach(ev => line.addEventListener(ev, () => show(i))); svg.appendChild(line); segEls[i] = line; });
+  for (let m = 0; m < D.track_length; m += 1000) { const k = P.findIndex(p => p[0] >= m); if (k < 0) continue;
+    svg.appendChild(el("circle", {cx: xs[k], cy: ys[k], r: 6*scale, fill: m === 0 ? "var(--fg)" : "var(--panel)", stroke: "var(--fg)", "stroke-width": 2*scale}));
+    const t = el("text", {x: xs[k] + 14*scale, y: ys[k] - 12*scale, class: "km", "font-size": 22*scale}); t.textContent = m === 0 ? "Start / finish" : m + " m"; svg.appendChild(t); }
+} else { document.getElementById("mapbox").hidden = true; }
+// ---- tables
+const bt = D.by_type_ms || {};
+T("types", ["Type", "Time vs AI"], ["slow","medium","fast","straight"].filter(k => k in bt).map(k => [k, `<span class="${bt[k] > 0 ? "loss" : "gain"}">${bt[k] > 0 ? "lose " : "gain "}${(Math.abs(bt[k])/1000).toFixed(3)} s</span>`]));
+T("corners", ["Corner", "Time", "Apex you / AI", "Brake you / AI", "Full throttle you / AI"], (D.corners || []).map(c =>
+  [`${c.from_m}–${c.to_m} m (${c.type})`, `<span class="${c.loss_ms > 0 ? "loss" : "gain"}">${c.loss_ms > 0 ? "lose " : "gain "}${(Math.abs(c.loss_ms)/1000).toFixed(3)} s</span>`, `${c.you.apex_speed} / ${c.them.apex_speed} km/h`, `${c.you.brake_at_m ?? "–"} / ${c.them.brake_at_m ?? "–"} m`, `${c.you.full_throttle_at_m ?? "–"} / ${c.them.full_throttle_at_m ?? "–"} m`]));
+const sd = D.setup_differences || {};
+T("setup", ["Setting", "You", "AI"], Object.entries(sd).map(([k, v]) => [k, typeof v.you === "number" ? +v.you.toFixed(2) : v.you, typeof v.them === "number" ? +v.them.toFixed(2) : v.them]));
+if (D.rule_of_thumb) document.getElementById("rot").textContent = (D.rule_of_thumb.weakest ? `Weakest area: ${D.rule_of_thumb.weakest}. Rule of thumb, not measured from your data: ${D.rule_of_thumb.text}` : D.rule_of_thumb.text) + ` AI setups are generic and AI pace comes mostly from the difficulty setting, so treat their values as a comparison, not a target.`;
+const by = D.battery_you, ba = D.battery_ai;
+if (by) T("battery", ["", "You", "AI"], [["Start → end", `${by.store_start_MJ.toFixed(2)} → ${by.store_end_MJ.toFixed(2)} MJ`, ba ? `${ba.store_start_MJ.toFixed(2)} → ${ba.store_end_MJ.toFixed(2)} MJ` : "–"],
+  ["Used / harvested", `${by.deployed_MJ.toFixed(2)} / ${by.harvested_MJ.toFixed(2)} MJ`, ba ? `${ba.deployed_MJ.toFixed(2)} / ${ba.harvested_MJ.toFixed(2)} MJ` : "–"],
+  ["Lowest", `${by.store_min_MJ.toFixed(2)} MJ at ${by.store_min_at_m} m`, ba ? `${ba.store_min_MJ.toFixed(2)} MJ at ${ba.store_min_at_m} m` : "–"]]);
+else T("battery", ["Battery"], [["Not used in this session type."]]);
+const pc = D.pace || {};
+T("pace", ["Session", "Conditions", "Best AI", "AI top-5 median", "You"], (pc.weekend || []).map(e => [e.folder.slice(0, 16), e.conditions, fmt(e.ai_best_ms), fmt(e.ai_top5_median_ms), fmt(e.my_best_ms)]));
+const pr = pc.prediction;
+document.getElementById("pred").textContent = pr ? (pr.methods.length ? "Predicted best AI qualifying lap (" + pr.conditions + "): " + pr.methods.map(m => `${fmt(m.ai_quali_ms)} from ${m.method}`).join("; ") + ". A prediction, not a measurement." : (pr.note || "")) : "Prediction is made after practice sessions.";
+const evRows = (D.safety_car || []).map(s => ({t: s.t, lap: s.lap, text: `Safety car status: ${s.status}`})).concat((D.events || []).map(e => ({t: e.t, lap: e.lap, text: e.text})));
+evRows.sort((a, b) => (a.lap ?? 0) - (b.lap ?? 0) || a.t - b.t);
+T("events", ["Your lap", "Event"], evRows.map(e => [e.lap ?? "–", e.text]));
+T("fuel", ["Lap", "Fuel", "Lap time"], (D.fuel || []).map(f => [f.lap, `${f.fuel_start_kg} kg`, fmt(f.time_ms)]));
+document.getElementById("foot").textContent = `Each map section is 100 m of lap distance, your best clean lap against the best clean AI lap. The map shape is your car's position on that lap; its rotation comes from the game's coordinates. Generated ${D.generated}.` + (D.compare_note ? " " + D.compare_note : "");
+</script>
+</body></html>
