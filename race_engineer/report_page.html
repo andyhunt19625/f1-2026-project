@@ -47,7 +47,8 @@ tr:hover td,tr.on td{background:color-mix(in srgb,var(--accent) 12%,transparent)
 .km{font-family:var(--mono);fill:var(--fg);paint-order:stroke;stroke:var(--panel);stroke-width:4px}
 @media (prefers-reduced-motion:no-preference){.seg{transition:stroke-width .15s}}
 
-[hidden]{display:none!important}
+[hidden],.off{display:none!important}
+.viewbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:.95rem}
 section.block{display:grid;gap:8px}
 .mode{font:inherit;font-size:.85rem;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
 .mode.on{border-color:var(--accent);color:var(--accent);font-weight:600}
@@ -64,9 +65,9 @@ section.block{display:grid;gap:8px}
     <h1 id="h1"></h1>
     <div class="times" id="times"></div>
   </header>
+  <div class="viewbar" id="viewbar"><label for="layer">Show:</label> <select id="layer" class="mode"></select></div>
+  <p class="note" id="viewnote"></p>
   <div class="map" id="mapbox">
-    <div class="legend" id="modes"><label for="layer">Show on the map:</label>
-      <select id="layer" class="mode"></select></div>
     <svg id="map" role="img" aria-label="Track map coloured by time gained or lost against the best AI lap in each 100 metres"></svg>
     <div class="legend" id="legend"></div>
     <div class="tip" id="tip">Tap or hover a section of track for its numbers.</div>
@@ -74,15 +75,15 @@ section.block{display:grid;gap:8px}
     <div class="cols"><div class="tbl"><table id="layerA"></table></div><div class="tbl"><table id="layerB"></table></div></div>
   </div>
   <div class="cols">
-    <section class="block"><h2>By type of track</h2><div class="tbl"><table id="types"></table></div></section>
-    <section class="block"><h2>Corners: you vs the AI</h2><div class="tbl"><table id="corners"></table></div></section>
+    <section class="block" data-view="ai"><h2>By type of track</h2><div class="tbl"><table id="types"></table></div></section>
+    <section class="block" data-view="ai"><h2>Corners: you vs the AI</h2><div class="tbl"><table id="corners"></table></div></section>
   </div>
   <div class="cols">
-    <section class="block"><h2>Setup: you vs the AI</h2><div class="tbl"><table id="setup"></table></div><p class="note" id="rot"></p></section>
-    <section class="block"><h2>Battery on your best lap</h2><div class="tbl"><table id="battery"></table></div></section>
+    <section class="block" data-view="ai"><h2>Setup: you vs the AI</h2><div class="tbl"><table id="setup"></table></div><p class="note" id="rot"></p></section>
+    <section class="block" data-view="battery"><h2>Battery on your best lap</h2><div class="tbl"><table id="battery"></table></div></section>
   </div>
-  <section class="block" id="attbox" hidden><h2 id="atth"></h2><div class="tbl"><table id="att"></table></div></section>
-  <section class="block" id="prevbox" hidden><h2 id="prevh"></h2><p class="note" id="prevsum"></p>
+  <section class="block" id="attbox" data-view="prev" hidden><h2 id="atth"></h2><div class="tbl"><table id="att"></table></div></section>
+  <section class="block" id="prevbox" data-view="prev" hidden><h2 id="prevh"></h2><p class="note" id="prevsum"></p>
     <div class="cols">
       <div class="tbl"><table id="prevtypes"></table></div>
       <div class="tbl"><table id="prevsetup"></table></div>
@@ -92,18 +93,18 @@ section.block{display:grid;gap:8px}
       <div class="tbl"><table id="prevdown"></table></div>
     </div>
   </section>
-  <section class="block" id="modelbox" hidden><h2>AI pace and the qualifying prediction</h2><div class="tbl"><table id="modelp"></table></div>
+  <section class="block" id="modelbox" data-view="pace" hidden><h2>AI pace and the qualifying prediction</h2><div class="tbl"><table id="modelp"></table></div>
     <div class="tbl"><table id="modelpred"></table></div><p class="note" id="modelnote"></p></section>
-  <section class="block"><h2>AI pace this weekend</h2><div class="tbl"><table id="pace"></table></div><p class="note" id="pred"></p></section>
-  <section class="block" id="tyrebox" hidden><h2>Tyre wear</h2><p class="note" id="tyresum"></p>
+  <section class="block" data-view="pace"><h2>AI pace this weekend</h2><div class="tbl"><table id="pace"></table></div><p class="note" id="pred"></p></section>
+  <section class="block" id="tyrebox" data-view="tyres" hidden><h2>Tyre wear</h2><p class="note" id="tyresum"></p>
     <div class="tbl"><table id="tyres"></table></div></section>
-  <section class="block" id="fuelbox" hidden><h2>Fuel: what a race would need</h2><p class="note" id="fuelsum"></p>
+  <section class="block" id="fuelbox" data-view="fuel" hidden><h2>Fuel: what a race would need</h2><p class="note" id="fuelsum"></p>
     <div class="tbl"><table id="fuelplan"></table></div></section>
   <div class="cols">
-    <section class="block"><h2>Race events</h2><div class="tbl"><table id="events"></table></div></section>
-    <section class="block"><h2>Fuel at the start of each lap</h2><div class="tbl"><table id="fuel"></table></div></section>
+    <section class="block" data-view="events"><h2>Race events</h2><div class="tbl"><table id="events"></table></div></section>
+    <section class="block" data-view="fuel"><h2>Fuel at the start of each lap</h2><div class="tbl"><table id="fuel"></table></div></section>
   </div>
-  <p class="note" id="foot"></p>
+  <p class="note" id="foot" data-view="ai prev battery braking acceleration fuel tyres"></p>
 </div>
 <script>
 const D = __DATA__;
@@ -213,23 +214,40 @@ function showMarkers(L, kind) {
   }
   document.getElementById("layerB").innerHTML = "";
 }
-const LAYER_DEFS = [["ai", "Time against the best AI"], ["prev", SP ? `Time against your ${SP.previous}` : null], ["battery", "Battery deployment"],
-  ["braking", "Braking points"], ["acceleration", "Acceleration points (corner exits)"], ["fuel", "Fuel use by section: saving points"], ["tyres", "Tyre wear by section"]];
-function drawLayer(id) {
-  baseMap();
-  if (id === "ai" || id === "prev") showTime(id);
-  else { const L = LY[id]; if (L && L.available) { L.kind === "pair" ? showPair(L) : showMarkers(L, id); } }
-  kmMarks();
-  tip.textContent = "Tap or hover a section or point of track for its numbers.";
+const VIEWS = [["ai", "Timing: you against the best AI"], ["prev", "Changes since your previous session, and restarts"],
+  ["battery", "Battery deployment"], ["braking", "Braking points"], ["acceleration", "Acceleration points (corner exits)"],
+  ["fuel", "Fuel: use by section and what a race needs"], ["tyres", "Tyre wear"], ["pace", "AI pace and the qualifying prediction"],
+  ["events", "Race events"]];
+const MAPVIEWS = ["ai", "prev", "battery", "braking", "acceleration", "fuel", "tyres"];
+const cap = t => t ? t.charAt(0).toUpperCase() + t.slice(1) + "." : "";
+function applyView(id) {
+  document.querySelectorAll("[data-view]").forEach(e => e.classList.toggle("off", !(" " + e.dataset.view + " ").includes(" " + id + " ")));
 }
-if (P.length > 10 && (D.segments || []).length) {
-  GEO = geometry();
-  const sel = document.getElementById("layer");
-  LAYER_DEFS.forEach(([id, name]) => { if (!name) return; const L = LY[id], off = id !== "ai" && id !== "prev" && !(L && L.available);
-    const o = document.createElement("option"); o.value = id; o.textContent = name + (off ? ` (${L && L.note ? L.note : "not available"})` : ""); o.disabled = off; sel.appendChild(o); });
-  sel.addEventListener("change", () => drawLayer(sel.value));
-  drawLayer("ai");
-} else { document.getElementById("mapbox").hidden = true; }
+function drawLayer(id) {
+  applyView(id);
+  const mb = document.getElementById("mapbox");
+  const isMap = MAPVIEWS.includes(id) && !!GEO && !(id === "prev" && !SP);
+  mb.hidden = !isMap;
+  if (isMap) {
+    baseMap();
+    if (id === "ai" || id === "prev") showTime(id);
+    else {
+      const L = LY[id];
+      if (L && L.available) { L.kind === "pair" ? showPair(L) : showMarkers(L, id); }
+      else { legend.innerHTML = ""; document.getElementById("layerA").innerHTML = ""; document.getElementById("layerB").innerHTML = "";
+        document.getElementById("layernote").textContent = cap(L && L.note ? L.note : "not available for this session"); }
+    }
+    kmMarks();
+    tip.textContent = "Tap or hover a section or point of track for its numbers.";
+  }
+  const shown = isMap || [...document.querySelectorAll("[data-view]")].some(e => e.id !== "foot" && !e.classList.contains("off") && !e.hidden);
+  document.getElementById("viewnote").textContent = shown ? "" : "Nothing was recorded for this view in this session.";
+}
+if (P.length > 10) GEO = geometry();
+const sel = document.getElementById("layer");
+VIEWS.forEach(([id, name]) => { const o = document.createElement("option"); o.value = id; o.textContent = name; sel.appendChild(o); });
+sel.addEventListener("change", () => drawLayer(sel.value));
+drawLayer("ai");
 
 // ---- tables
 const bt = D.by_type_ms || {};
