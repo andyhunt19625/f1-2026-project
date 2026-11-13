@@ -48,6 +48,9 @@ This file exists because sessions on the PC lose their memory when the PC restar
 - Australia race (13 Nov 2026, folder `20261113T144548Z_f581fa0a7b1bc0de`, 20 laps): `Session.safetyCarStatus` 3 on the
   formation lap, 1 (full safety car) laps 5-8. Event `PENA` with `penaltyType` 5 is a WARNING, not a penalty (Andy confirmed).
   Andy's DRS fault from lap 14 is the active aero failure he reported. Start fuel: Andy 23.6 kg, AI 27.7-30.4 kg.
+- Andy's races are always set to 35% distance: Australia race = 20 laps (35% of the real 58 laps = 20.3), China sprint = 7 laps.
+  Reports show start fuel for sprints of 5-10 laps and races of 15-30 laps (race_engineer/fuel_config.json). China dry burn
+  measured 1.164 kg/lap (FP1 + sprint shootout laps, fuel mix 1); no wet China figure yet.
 - A car retiring makes `numActiveCars` drop mid-race; never rebuild per-car data when it changes.
 - AI setups are generic; AI pace comes mostly from the AI difficulty setting.
 
