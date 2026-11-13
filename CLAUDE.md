@@ -45,6 +45,10 @@ This file exists because sessions on the PC lose their memory when the PC restar
 - The game sends fixed battery values (store 4.00 MJ, nothing deployed or harvested) for some AI cars; the tools leave those laps out.
 - ERS deploy mode, as recorded on Andy's laps: 0 = none, 1 = medium, 2 = hotlap, 3 = overtake (0 matched his account of the pole lap; the others are the spec's names).
 - Time Trial has no battery deployment: do not run battery analysis on it.
+- Australia race (13 Nov 2026, folder `20261113T144548Z_f581fa0a7b1bc0de`, 20 laps): `Session.safetyCarStatus` 3 on the
+  formation lap, 1 (full safety car) laps 5-8. Event `PENA` with `penaltyType` 5 is a WARNING, not a penalty (Andy confirmed).
+  Andy's DRS fault from lap 14 is the active aero failure he reported. Start fuel: Andy 23.6 kg, AI 27.7-30.4 kg.
+- A car retiring makes `numActiveCars` drop mid-race; never rebuild per-car data when it changes.
 - AI setups are generic; AI pace comes mostly from the AI difficulty setting.
 
 ## After a PC restart
