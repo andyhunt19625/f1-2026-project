@@ -32,6 +32,24 @@ class AutoReportTests(unittest.TestCase):
             self.assertEqual([f.name for f in auto_report.candidates(state, d)],
                              ["20261113T152613Z_china", "20261113T162000Z_new"])
 
+    def test_quiet_folder_uses_saved_live_digest_when_there_is_no_marker(self):
+        with tempfile.TemporaryDirectory() as d:
+            live = Path(d) / "live"
+            live.mkdir()
+            folder(d, "20261113T162000Z_a8385207b9f1f036b"[:17] + "8385207b9f1f036b", 100, 600)
+            (live / "8385207b9f1f036b.pkl.gz").write_bytes(b"x")          # saved after a lap, never marked done
+            calls = []
+
+            def fake(cmd):
+                calls.append(cmd)
+                return True, "Report: D:\\r\\x.html\n"
+            state = {"since_epoch": time.time() - 3600}
+            with mock.patch.object(auto_report, "RUN", Path(d) / "run"), \
+                 mock.patch.object(auto_report, "LATEST", Path(d) / "run" / "l.txt"), \
+                 mock.patch.object(auto_report, "LOG", Path(d) / "run" / "log.txt"):
+                auto_report.tick(state, runner=fake, sessions=d, live=live)
+            self.assertIn("--digest", calls[0])
+
     def test_tick_runs_report_records_result_and_latest(self):
         with tempfile.TemporaryDirectory() as d:
             folder(d, "20261113T162000Z_a", 100, 600)

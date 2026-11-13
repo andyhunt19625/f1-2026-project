@@ -129,7 +129,13 @@ def tick(state, runner=None, sessions=SESSIONS, now=None, live=LIVE, include_qui
         jobs.append((folder, dig, m))
     if include_quiet:
         live_names = {f.name for f, _, _ in jobs}
-        jobs += [(f, None, None) for f in candidates(state, sessions, now) if f.name not in live_names]
+        for f in candidates(state, sessions, now):
+            if f.name in live_names:
+                continue
+            # Quit the game without the "session finished" signal? The engineer saved a digest after
+            # every lap, so use it instead of reading the whole file.
+            dig = Path(live) / f"{f.name.rsplit('_', 1)[-1]}.pkl.gz"
+            jobs.append((f, dig if dig.is_file() else None, None))
     for folder, dig, marker in jobs:
         t0 = time.time()
         ok, text = report_one(folder, runner, dig)

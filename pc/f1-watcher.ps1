@@ -1,6 +1,7 @@
-# Starts Claude Remote Control for D:\RealF1-esports while F1 25 is running.
-# When the game closes it first turns capture and the engineer OFF CLEANLY (so the session
-# is closed and saved), then stops Remote Control.
+# While F1 25 is running: starts Claude Remote Control for D:\RealF1-esports, and turns capture, the
+# engineer and the after-session report watcher ON (control on) when the game starts.
+# When the game closes it first turns them OFF CLEANLY (so the session is closed and saved),
+# then stops Remote Control.
 # Started at logon by the scheduled task "RealF1 esports F1 Watcher". Copy of pc/f1-watcher.ps1.
 $gameProcess = 'F1_25'
 $claude  = "$env:USERPROFILE\.local\bin\claude.exe"
@@ -24,6 +25,14 @@ while ($true) {
     $gameRunning = [bool](Get-Process -Name $gameProcess -ErrorAction SilentlyContinue)
     $rc = Get-RemoteControl
 
+    if ($gameRunning -and -not $wasRunning) {
+        # 'control on' does nothing for anything already running, so it is safe to repeat.
+        Write-Log 'Game running: turning capture, the engineer and reports on'
+        Push-Location $engDir
+        $out = & python -m race_engineer.control on 2>&1 | Out-String
+        Pop-Location
+        Write-Log $out.Trim()
+    }
     if ($gameRunning -and $rc.Count -eq 0) {
         Write-Log 'Game running and no Remote Control: starting it'
         Start-Process -FilePath $claude -ArgumentList 'remote-control', '--permission-mode', 'auto' `
