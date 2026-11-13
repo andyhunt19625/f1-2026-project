@@ -4,8 +4,9 @@
   python3 -m race_engineer.control off [--force]
   python3 -m race_engineer.control status
 
-on  : capture first (if not already running), then the engineer program.
-off : the engineer first, then capture.
+on  : capture first (if not already running), then the engineer program, then the after-session
+      report watcher (auto_report.py).
+off : the report watcher, the engineer, then capture.
 Only touches f1-esports-capture.service (the sudoers rule allows exactly start, stop
 and status of that one service) and the engineer's own process. Never touches the
 real F1 site or its services.
@@ -32,6 +33,9 @@ IS_WINDOWS = os.name == "nt"
 CAPTURE_DIR = ROOT.parent / "capture"
 CAPTURE_PID = RUN_DIR / "capture.pid"
 CAPTURE_OUT = RUN_DIR / "capture.out"
+AUTO_PID = RUN_DIR / "auto_report.pid"
+AUTO_OUT = RUN_DIR / "auto_report.out"
+AUTO_STOP = RUN_DIR / "auto_report.stop"
 STOP_FILE = CAPTURE_DIR / "STOP"                       # udp_capture.py (PC copy) exits cleanly when this exists
 WIN_DETACHED = 0x00000008 | 0x00000200                  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
 WIN_BREAKAWAY = 0x01000000                              # CREATE_BREAKAWAY_FROM_JOB
@@ -158,6 +162,30 @@ def start_engineer(extra_args):
     return proc.pid
 
 
+def auto_pid(runner=_run):
+    return _pid_running(AUTO_PID, "race_engineer.auto_report", runner)
+
+
+def start_auto():
+    """The after-session report watcher (auto_report.py). Never blocks capture or the engineer."""
+    if auto_pid():
+        return f"Auto report: already running (pid {auto_pid()})."
+    AUTO_STOP.unlink(missing_ok=True)
+    proc = _spawn([sys.executable, "-m", "race_engineer.auto_report", "run"], ROOT, AUTO_OUT)
+    AUTO_PID.write_text(str(proc.pid))
+    return f"Auto report: started (pid {proc.pid})."
+
+
+def stop_auto():
+    pid = auto_pid()
+    if not pid:
+        return "Auto report: was not running."
+    AUTO_STOP.write_text("stop")
+    if wait_for(lambda: auto_pid() is None, 40):
+        return "Auto report: stopped."
+    return f"Auto report (pid {pid}) is finishing a report and will stop after it."
+
+
 def log_tail(n=8):
     try:
         return "\n".join(LOGFILE.read_text(errors="replace").splitlines()[-n:])
@@ -191,6 +219,7 @@ def cmd_on(args):
             print(f"Engineer did not come up (pid {pid}). Log:\n{tail}")
             return 1
         print(f"Engineer: started (pid {pid}).")
+    print(start_auto())
     return cmd_status(args)
 
 
@@ -227,6 +256,7 @@ def cmd_off(args):
               f"{ACTIVE_WITHIN_S} seconds, so a race may be in progress. Not stopping. "
               "Run 'off --force' only if you are sure.")
         return 1
+    print(stop_auto())
     ok, msg = stop_engineer()
     print(msg)
     if not ok:
@@ -262,6 +292,8 @@ def cmd_status(args):
     print(f"Capture: {capture_state()}")
     pid = engineer_pid()
     print(f"Engineer: {'running (pid %d)' % pid if pid else 'not running'}")
+    ap_ = auto_pid()
+    print(f"Auto report: {'running (pid %d)' % ap_ if ap_ else 'not running'}")
     ports = listening()
     word = {True: "yes", False: "no", None: "unknown (port check not available)"}
     print(f"Listening: capture port 20777 {word[ports[20777]]}, engineer port 20778 {word[ports[20778]]}")
