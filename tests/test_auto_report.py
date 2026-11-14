@@ -50,6 +50,32 @@ class AutoReportTests(unittest.TestCase):
                 auto_report.tick(state, runner=fake, sessions=d, live=live)
             self.assertIn("--digest", calls[0])
 
+    def test_provisional_quiet_report_is_replaced_when_the_engineer_marks_the_session_done(self):
+        with tempfile.TemporaryDirectory() as d:
+            live = Path(d) / "live"
+            live.mkdir()
+            f = folder(d, "20261113T162000Z_8385207b9f1f036b", 100, 600)
+            calls = []
+
+            def fake(cmd):
+                calls.append(cmd)
+                return True, "Report: D:\\r\\x.html\n"
+            state = {"since_epoch": time.time() - 3600}
+            with mock.patch.object(auto_report, "RUN", Path(d) / "run"), \
+                 mock.patch.object(auto_report, "LATEST", Path(d) / "run" / "l.txt"), \
+                 mock.patch.object(auto_report, "LOG", Path(d) / "run" / "log.txt"):
+                auto_report.tick(state, runner=fake, sessions=d, live=live)           # quiet pause: provisional report
+                self.assertEqual(len(calls), 1)
+                self.assertIn(f.name, state["provisional"])
+                (live / "8385207b9f1f036b.pkl.gz").write_bytes(b"x")
+                (live / "8385207b9f1f036b.done").write_bytes(b"")                      # the session really ends
+                auto_report.tick(state, runner=fake, sessions=d, live=live)
+                self.assertEqual(len(calls), 2)
+                self.assertIn("--digest", calls[1])
+                self.assertEqual(state["provisional"], [])
+                auto_report.tick(state, runner=fake, sessions=d, live=live)           # nothing more to do
+                self.assertEqual(len(calls), 2)
+
     def test_tick_runs_report_records_result_and_latest(self):
         with tempfile.TemporaryDirectory() as d:
             folder(d, "20261113T162000Z_a", 100, 600)

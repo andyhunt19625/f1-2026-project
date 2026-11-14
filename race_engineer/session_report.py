@@ -21,7 +21,7 @@ from .session_reader import lap_label
 ROOT = Path(__file__).resolve().parent.parent
 PACE_STORE = ROOT / "run" / "pace_store.json"
 DEFAULT_OUT = ROOT.parent / "reports"
-TRACKS = {0: "Melbourne", 2: "Shanghai"}   # only tracks seen in Andy's data (2: China P1, 13 Nov 2026)
+TRACKS = {0: "Melbourne", 2: "Shanghai", 13: "Suzuka"}   # 0 and 2 seen in Andy's data; 13 is Suzuka in the UDP spec (Andy's Japan weekend, 14 Nov 2026)
 SESSION_NAMES = {1: "Practice 1", 2: "Practice 2", 3: "Practice 3", 4: "Short practice", 5: "Qualifying 1",
                  6: "Qualifying 2", 7: "Qualifying 3", 8: "Short qualifying", 9: "One-shot qualifying",
                  10: "Sprint shootout 1", 11: "Sprint shootout 2", 12: "Sprint shootout 3",
@@ -430,7 +430,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     res, path = run(a.folder, a.out, digest_path=a.digest)
     gap = (res.get("your_ms") or 0) - (res.get("ai_ms") or 0)
-    print(f"{res['session']} at {res['track']} ({res['conditions']}): you {fmt_ms(res['your_ms']) if res.get('your_ms') else '-'}"
+    print(f"{res['session']} at {res['track']} ({res['conditions']}): you {fmt_ms(res['your_ms']) if res.get('your_ms') else 'no clean lap'}"
           + (f", best AI {res['ai'].title()} {fmt_ms(res['ai_ms'])} ({gap / 1000:+.3f} s)" if res.get("ai_ms") else ""))
     p = (res.get("pace") or {}).get("prediction")
     if p:

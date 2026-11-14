@@ -11,6 +11,8 @@ it also looks in sessions\\ for folders (the fallback when the engineer was not 
 - have not been written to for QUIET_S seconds (the session is over),
 and that have no report yet. For each, oldest first, it runs `session_report` in a separate low-priority
 process, so a problem in one session cannot stop the watcher and the game keeps the CPU.
+A report built that way is "provisional" (the session may only have paused): when the engineer later marks the same
+session done, the report is built again from its final digest and replaces the provisional one.
 Results are kept in run/auto_report_state.json; the latest report path is in run/latest_report.txt.
 Stops cleanly when run/auto_report.stop exists. Read-only on the session data.
 """
@@ -30,7 +32,7 @@ STATE = RUN / "auto_report_state.json"
 STOP = RUN / "auto_report.stop"
 LATEST = RUN / "latest_report.txt"
 LOG = RUN / "auto_report.log"
-POLL_S, QUIET_S, MIN_MB = 5, 90, 50
+POLL_S, QUIET_S, MIN_MB = 5, 300, 50   # QUIET_S was 90: a 14 Nov 2026 Practice 2 pause outlasted it and got an empty report
 LIVE = RUN / "live_digests"          # the engineer writes <uid>.pkl.gz and <uid>.done here (live_laps.py)
 MARKER_GIVE_UP_S = 600              # a marker whose session folder never appears is dropped after this
 BELOW_NORMAL = 0x00004000          # Windows BELOW_NORMAL_PRIORITY_CLASS
@@ -122,8 +124,9 @@ def tick(state, runner=None, sessions=SESSIONS, now=None, live=LIVE, include_qui
     for m in stale:
         log(f"no session folder appeared for live digest {m.stem}; using the file-read path instead")
         m.unlink(missing_ok=True)
+    prov = state.setdefault("provisional", [])
     for folder, dig, m in markers:
-        if folder.name in state.get("done", {}):
+        if folder.name in state.get("done", {}) and folder.name not in prov:
             m.unlink(missing_ok=True)
             continue
         jobs.append((folder, dig, m))
@@ -132,6 +135,8 @@ def tick(state, runner=None, sessions=SESSIONS, now=None, live=LIVE, include_qui
         for f in candidates(state, sessions, now):
             if f.name in live_names:
                 continue
+            if f.name not in prov:
+                prov.append(f.name)
             # Quit the game without the "session finished" signal? The engineer saved a digest after
             # every lap, so use it instead of reading the whole file.
             dig = Path(live) / f"{f.name.rsplit('_', 1)[-1]}.pkl.gz"
@@ -144,8 +149,12 @@ def tick(state, runner=None, sessions=SESSIONS, now=None, live=LIVE, include_qui
             ok, text = report_one(folder, runner)
         if marker:
             marker.unlink(missing_ok=True)
+            if ok and folder.name in prov:
+                prov.remove(folder.name)           # the final build replaced the provisional one
         state.setdefault("done", {})[folder.name] = (("ok" if ok else "error") + f" in {time.time() - t0:.0f} s"
-                                                     + (" (live digest)" if dig and ok else ""))
+                                                     + (" (live digest)" if dig and ok else "")
+                                                     + (" (provisional: replaced when the session really ends)"
+                                                        if not marker and ok else ""))
         if ok:
             line = next((l for l in text.splitlines() if l.startswith("Report: ")), None)
             if line:

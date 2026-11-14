@@ -116,7 +116,7 @@ document.getElementById("eyebrow").textContent = `${D.track} · ${D.session} · 
 if (D.error) { document.getElementById("h1").textContent = D.error; }
 else {
   const gap = D.ai_ms != null ? D.your_ms - D.ai_ms : null;
-  document.getElementById("h1").textContent = gap == null ? `Your best: ${fmt(D.your_ms)}` :
+  document.getElementById("h1").textContent = gap == null ? (D.your_ms == null ? "No clean lap of yours in this session" : `Your best: ${fmt(D.your_ms)}`) :
     (gap <= 0 ? `${(-gap/1000).toFixed(3)} s quicker than the best AI` : `${(gap/1000).toFixed(3)} s off the best AI`);
   document.getElementById("times").innerHTML =
     `<div><span class="eyebrow">Your best (${D.your_lap})</span><b>${fmt(D.your_ms)}</b></div>` +
